@@ -61,6 +61,7 @@ if st.session_state.pagina == "formulario":
 
     with st.form("form_visita", clear_on_submit=False):
 
+        # 🔹 NUEVA SECCIÓN
         st.markdown("### 🧑‍💼 Datos del Vendedor")
         colv1, colv2, colv3 = st.columns(3)
 
@@ -99,39 +100,13 @@ if st.session_state.pagina == "formulario":
         k1, k2, k3 = st.columns(3)
 
         with k1:
-            efectividad = st.number_input("Efectividad", min_value=0.0)
+            efectividad = st.number_input("Efectividad", min_value=0)
 
         with k2:
             ticket_promedio = st.number_input("Ticket Promedio (S/)", min_value=0.0)
 
         with k3:
             tiempo_pdc = st.number_input("Tiempo en PDC", min_value=0)
-
-        # 🔥 AÑADIDO (SIN CAMBIAR DISEÑO)
-        st.markdown("---")
-        st.markdown("### 🧁 Categorías")
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            oreo_34 = st.checkbox("OREO 34GR")
-            oreo_54 = st.checkbox("OREO 54GR")
-        with c2:
-            ritz_rollo = st.checkbox("RITZ ROLLO")
-            club_tra = st.checkbox("CLUB SOCIAL TRA")
-        with c3:
-            trident = st.checkbox("TRIDENT")
-            halls = st.checkbox("HALLS")
-
-        st.markdown("### 🧱 Exhibidores")
-        legos = st.number_input("LEGOS GC", min_value=0)
-        tobogan = st.number_input("TOBOGAN", min_value=0)
-        kiwi = st.number_input("KIWI", min_value=0)
-
-        cont_legos = st.number_input("CONT LEGOS", min_value=0)
-        cont_tobogan = st.number_input("CONT TOBOGAN", min_value=0)
-        cont_kiwi = st.number_input("CONT KIWI", min_value=0)
-
-        terceros = st.selectbox("¿Colocación de terceros?", ["Sí","No"])
 
         submitted = st.form_submit_button("✅ Guardar y ver dashboard →", use_container_width=True)
 
@@ -144,28 +119,10 @@ if st.session_state.pagina == "formulario":
                 "Codigo_PDC": codigo_pdc,
                 "Nombre_Cliente": nombre_cliente,
                 "Giro_Negocio": giro_negocio,
-
-                "OREO_34GR": int(oreo_34),
-                "OREO_54GR": int(oreo_54),
-                "RITZ_ROLLO": int(ritz_rollo),
-                "CLUB_SOCIAL_TRA": int(club_tra),
-                "TRIDENT_5s": int(trident),
-                "HALLS_12s": int(halls),
-
-                "LEGOS_GC": legos,
-                "TOBOGAN_RITZ_OREO": tobogan,
-                "EXHIB_KIWI": kiwi,
-                "CONT_LEGOS_GC": cont_legos,
-                "CONT_TOBOGAN_RITZ_OREO": cont_tobogan,
-                "CONT_EXHIB_KIWI": cont_kiwi,
-
-                "Colocacion_Terceros": terceros,
-
                 "Efectividad": efectividad,
                 "Ticket_Promedio": ticket_promedio,
                 "Tiempo_PDC": tiempo_pdc
             }
-
             guardar_registro(registro)
             st.session_state.pagina = "dashboard"
             st.rerun()
@@ -173,7 +130,6 @@ if st.session_state.pagina == "formulario":
 elif st.session_state.pagina == "dashboard":
 
     df = cargar_datos()
-    df.fillna(0, inplace=True)
 
     st.markdown("# 📊 Dashboard")
 
@@ -188,14 +144,12 @@ elif st.session_state.pagina == "dashboard":
     col1.metric("Total Visitas", total_visitas)
     col2.metric("Total Ventas", total_ventas)
 
-    # 🔥 AÑADIDOS
-    df["Cierre"] = df["Efectividad"] > 0
-    st.write("Efectividad (% cierre):", round(df["Cierre"].mean()*100,1), "%")
-
     st.markdown("### Últimas visitas")
+
     cols_tabla = [
         "Nombre_Vendedor","Mesa","Codigo_Vendedor",
         "Fecha","Codigo_PDC","Nombre_Cliente",
         "Efectividad","Ticket_Promedio","Tiempo_PDC"
     ]
+
     st.dataframe(df[cols_tabla].tail(20), use_container_width=True)
