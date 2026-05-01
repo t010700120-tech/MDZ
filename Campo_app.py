@@ -144,11 +144,7 @@ if st.session_state.pagina == "formulario":
             horizontal=True
         )
 
-        st.markdown("---")
-        st.markdown("### 📍 Ubicación Preferencial")
-        ubicacion_preferencial = st.checkbox("Cuenta con Ubicación Preferencial", key="e_ubic")
-
-        st.markdown("---")
+  
         st.markdown("### 🏷️ Colocación de Terceros")
         col_terc1, col_terc2 = st.columns([1, 2])
         with col_terc1:
@@ -160,7 +156,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("### 📊 Indicadores de la visita")
         k1, k2, k3 = st.columns(3)
         with k1:
-            efectividad = st.number_input("Efectividad (ventas realizadas)", min_value=0, step=1, value=0)
+            efectividad = st.number_input("Efectividad_Ventas realizadas(S/)", min_value=0.0, step=1, value=0)
         with k2:
             ticket_promedio = st.number_input("Ticket Promedio (S/)", min_value=0.0, step=0.5, value=0.0, format="%.2f")
         with k3:
