@@ -34,7 +34,7 @@ COLUMNAS = [
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S",
     "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI",
     "CONT_LEGOS_GC", "CONT_TOBOGAN_RITZ_OREO", "CONT_EXHIB_KIWI",
-    "Visibilidad", "Ubicacion_Preferencial",
+    "Visibilidad",
     "Colocacion_Terceros", "Marca_Tercero",
     "Efectividad", "Ticket_Promedio", "Tiempo_PDC"
 ]
@@ -65,104 +65,42 @@ if st.session_state.pagina == "formulario":
         with col1:
             fecha = st.date_input("Fecha", value=date.today())
         with col2:
-            codigo_pdc = st.text_input("Código PDC (8 dígitos)", max_chars=8, placeholder="Ej: 00000001")
+            codigo_pdc = st.text_input("Código PDC (8 dígitos)", max_chars=8)
         with col3:
-            nombre_cliente = st.text_input("Nombre del Cliente", placeholder="Ej: Bodega Central")
+            nombre_cliente = st.text_input("Nombre del Cliente")
         with col4:
             giro_negocio = st.selectbox("Giro de Negocio", options=[
-                "1 - Bodega",
-                "2 - Minimarket / Tiendas",
-                "3 - Kiosko",
-                "4 - Especializados (Panificadora, Horeca, Internet)",
-                "5 - Otros (Puesto de mercado, Centros Educativos)"
+                "1 - Bodega","2 - Minimarket / Tiendas","3 - Kiosko",
+                "4 - Especializados","5 - Otros"
             ])
 
         st.markdown("---")
-        st.markdown("### 🍪 Presencia Biscuits")
-        biscuits = {
-            "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
-            "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
-            "FIELD_CC": "FIELD (CC)", "FIELD_DP": "FIELD (DP)", "FIELD_VAIN": "FIELD (VAIN)",
-            "CLUB_SOCIAL_TRA": "CLUB SOCIAL (TRA)", "CLUB_SOCIAL_SAB": "CLUB SOCIAL (SAB)"
-        }
-        cols = st.columns(5)
-        biscuits_vals = {}
-        for i, (key, label) in enumerate(biscuits.items()):
-            with cols[i % 5]:
-                biscuits_vals[key] = st.checkbox(label, key=f"b_{key}")
 
-        st.markdown("---")
-        st.markdown("### 🍬 Presencia G&C")
-        gyc = {
-            "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
-            "HALLS_12s": "HALLS 12s", "HALLS_100s": "HALLS 100s", "CHICLETS_2S": "CHICLETS 2S"
-        }
-        cols2 = st.columns(5)
-        gyc_vals = {}
-        for i, (key, label) in enumerate(gyc.items()):
-            with cols2[i % 5]:
-                gyc_vals[key] = st.checkbox(label, key=f"g_{key}")
-
-        st.markdown("---")
-        st.markdown("### 🏪 Tipos de Exhibidores")
-        tipos = {
-            "LEGOS_GC": "LEGOS G&C",
-            "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
-            "EXHIB_KIWI": "EXHIB KIWI"
-        }
-        cols3 = st.columns(3)
-        tipos_vals = {}
-        for i, (key, label) in enumerate(tipos.items()):
-            with cols3[i]:
-                tipos_vals[key] = st.checkbox(label, key=f"t_{key}")
-
-        st.markdown("---")
-        st.markdown("### ⚠️ Contaminación de Exhibidores")
-        st.markdown("*Marca los exhibidores que presentan contaminación*")
-        contaminacion = {
-            "CONT_LEGOS_GC": "LEGOS G&C",
-            "CONT_TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
-            "CONT_EXHIB_KIWI": "EXHIB KIWI"
-        }
-        cols_cont = st.columns(3)
-        cont_vals = {}
-        for i, (key, label) in enumerate(contaminacion.items()):
-            with cols_cont[i]:
-                cont_vals[key] = st.checkbox(label, key=f"c_{key}")
-
-        st.markdown("---")
         st.markdown("### 👁️ Visibilidad")
-        st.markdown("""<div class="leyenda-box">
-            📌 <b>1</b> = Alta Visibilidad &nbsp;|&nbsp;
-            📌 <b>2</b> = Visibilidad Media &nbsp;|&nbsp;
-            📌 <b>3</b> = Baja Visibilidad
-        </div>""", unsafe_allow_html=True)
-        visibilidad = st.radio(
-            "Nivel de visibilidad en el punto de venta",
-            options=[1, 2, 3],
-            format_func=lambda x: {1: "1 - Alta Visibilidad", 2: "2 - Visibilidad Media", 3: "3 - Baja Visibilidad"}[x],
-            horizontal=True
-        )
+        visibilidad = st.radio("Nivel de visibilidad", [1,2,3], horizontal=True)
 
-  
+        st.markdown("---")
+
         st.markdown("### 🏷️ Colocación de Terceros")
         col_terc1, col_terc2 = st.columns([1, 2])
         with col_terc1:
             colocacion_terceros = st.radio("¿Hay productos de terceros?", options=["No", "Sí"], horizontal=True)
         with col_terc2:
-            marca_tercero = st.text_input("Marca del tercero (si aplica)", placeholder="Ej: Nabisco, Kraft...")
+            marca_tercero = st.text_input("Marca del tercero (si aplica)")
 
         st.markdown("---")
+
         st.markdown("### 📊 Indicadores de la visita")
         k1, k2, k3 = st.columns(3)
         with k1:
-            efectividad = st.number_input("Efectividad_Ventas realizadas(S/)", min_value=0.0, step=1, value=0)
+            efectividad = st.number_input("Ventas (S/)", min_value=0.0)
         with k2:
-            ticket_promedio = st.number_input("Ticket Promedio (S/)", min_value=0.0, step=0.5, value=0.0, format="%.2f")
+            ticket_promedio = st.number_input("Ticket Promedio (S/)", min_value=0.0)
         with k3:
-            tiempo_pdc = st.number_input("Tiempo en PDC (minutos)", min_value=0, step=1, value=0)
+            tiempo_pdc = st.number_input("Tiempo en PDC", min_value=0)
 
         st.markdown("---")
+
         submitted = st.form_submit_button("✅ Guardar y ver dashboard →", use_container_width=True)
 
         if submitted:
@@ -174,12 +112,7 @@ if st.session_state.pagina == "formulario":
                     "Codigo_PDC": codigo_pdc,
                     "Nombre_Cliente": nombre_cliente,
                     "Giro_Negocio": giro_negocio,
-                    **{k: int(v) for k, v in biscuits_vals.items()},
-                    **{k: int(v) for k, v in gyc_vals.items()},
-                    **{k: int(v) for k, v in tipos_vals.items()},
-                    **{k: int(v) for k, v in cont_vals.items()},
                     "Visibilidad": visibilidad,
-                    "Ubicacion_Preferencial": int(ubicacion_preferencial),
                     "Colocacion_Terceros": colocacion_terceros,
                     "Marca_Tercero": marca_tercero,
                     "Efectividad": efectividad,
@@ -193,93 +126,24 @@ if st.session_state.pagina == "formulario":
 elif st.session_state.pagina == "dashboard":
 
     df = cargar_datos()
+    df.fillna(0, inplace=True)
 
-    col_title, col_btn = st.columns([5, 1])
-    with col_title:
-        st.markdown("# 📊 Dashboard - Supervisión Canal Tradicional")
-    with col_btn:
-        if st.button("＋ Nueva visita"):
-            st.session_state.pagina = "formulario"
-            st.rerun()
+    for col in COLUMNAS:
+        if col not in df.columns:
+            df[col] = 0
+
+    st.markdown("# 📊 Dashboard")
 
     if df.empty:
         st.warning("No hay registros aún.")
         st.stop()
 
-    df["Fecha"] = pd.to_datetime(df["Fecha"])
-    df["Efectividad"] = pd.to_numeric(df["Efectividad"], errors="coerce").fillna(0)
-    df["Ticket_Promedio"] = pd.to_numeric(df["Ticket_Promedio"], errors="coerce").fillna(0)
-    df["Tiempo_PDC"] = pd.to_numeric(df["Tiempo_PDC"], errors="coerce").fillna(0)
-
     total_visitas = len(df)
     total_ventas = df["Efectividad"].sum()
-    ticket_prom = df["Ticket_Promedio"].mean()
-    tiempo_prom = df["Tiempo_PDC"].mean()
 
-    st.markdown("---")
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(f'<div class="kpi-box"><div class="kpi-label">Total visitas</div><div class="kpi-value">{total_visitas}</div><div class="kpi-sub">registros</div></div>', unsafe_allow_html=True)
-    with k2:
-        st.markdown(f'<div class="kpi-box"><div class="kpi-label">Total ventas</div><div class="kpi-value">{int(total_ventas)}</div><div class="kpi-sub">efectividad acumulada</div></div>', unsafe_allow_html=True)
-    with k3:
-        st.markdown(f'<div class="kpi-box"><div class="kpi-label">Ticket promedio</div><div class="kpi-value">S/ {ticket_prom:.2f}</div><div class="kpi-sub">promedio por visita</div></div>', unsafe_allow_html=True)
-    with k4:
-        st.markdown(f'<div class="kpi-box"><div class="kpi-label">Tiempo en PDC</div><div class="kpi-value">{tiempo_prom:.0f} min</div><div class="kpi-sub">promedio por visita</div></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    col1.metric("Total Visitas", total_visitas)
+    col2.metric("Total Ventas", f"S/ {total_ventas:,.2f}")
 
-    st.markdown("---")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("#### Efectividad por fecha")
-        df_fecha = df.groupby("Fecha")["Efectividad"].sum().reset_index()
-        fig1 = px.bar(df_fecha, x="Fecha", y="Efectividad", color_discrete_sequence=["#1a1a1a"])
-        fig1.update_layout(plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=20, b=20))
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with col_g2:
-        st.markdown("#### Visitas por Giro de Negocio")
-        if "Giro_Negocio" in df.columns:
-            df_giro = df["Giro_Negocio"].value_counts().reset_index()
-            df_giro.columns = ["Giro", "Visitas"]
-            fig_giro = px.pie(df_giro, names="Giro", values="Visitas",
-                              color_discrete_sequence=["#1a1a1a","#555","#888","#aaa","#ccc"])
-            fig_giro.update_layout(paper_bgcolor="white", margin=dict(t=20, b=20))
-            st.plotly_chart(fig_giro, use_container_width=True)
-
-    col_g3, col_g4 = st.columns(2)
-    with col_g3:
-        st.markdown("#### Visibilidad promedio por fecha")
-        if "Visibilidad" in df.columns:
-            df["Visibilidad"] = pd.to_numeric(df["Visibilidad"], errors="coerce")
-            df_vis = df.groupby("Fecha")["Visibilidad"].mean().reset_index()
-            fig_vis = px.line(df_vis, x="Fecha", y="Visibilidad", color_discrete_sequence=["#1a1a1a"], markers=True)
-            fig_vis.update_layout(plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=20, b=20),
-                                  yaxis=dict(range=[0.5, 3.5], tickvals=[1,2,3], ticktext=["1-Alta","2-Media","3-Baja"]))
-            st.plotly_chart(fig_vis, use_container_width=True)
-
-    with col_g4:
-        st.markdown("#### Tiempo promedio por cliente (top 10)")
-        df_top = df.groupby("Nombre_Cliente")["Tiempo_PDC"].mean().nlargest(10).reset_index()
-        fig2 = px.bar(df_top, x="Tiempo_PDC", y="Nombre_Cliente", orientation="h", color_discrete_sequence=["#555"])
-        fig2.update_layout(plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=20, b=20), yaxis_title="")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    st.markdown("#### Presencia de productos (% de visitas)")
-    productos = ["OREO_34GR","OREO_54GR","OREO_ROLLO","RITZ_ROLLO","RITZ_TACO",
-                 "FIELD_CC","FIELD_DP","FIELD_VAIN","TRIDENT_5s","HALLS_12s","CHICLETS_2S"]
-    presencia_pct = []
-    for p in productos:
-        if p in df.columns:
-            pct = pd.to_numeric(df[p], errors="coerce").fillna(0).mean() * 100
-            presencia_pct.append({"Producto": p.replace("_"," "), "Presencia %": round(pct,1)})
-    df_pres = pd.DataFrame(presencia_pct).sort_values("Presencia %", ascending=True)
-    fig3 = px.bar(df_pres, x="Presencia %", y="Producto", orientation="h",
-                  color="Presencia %", color_continuous_scale=["#e8e6e0","#1a1a1a"], range_x=[0,100])
-    fig3.update_layout(plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=10,b=20), coloraxis_showscale=False)
-    st.plotly_chart(fig3, use_container_width=True)
-
-    st.markdown("#### Últimas visitas")
-    cols_tabla = ["Fecha","Codigo_PDC","Nombre_Cliente","Giro_Negocio",
-                  "Efectividad","Ticket_Promedio","Tiempo_PDC","Visibilidad","Colocacion_Terceros","Marca_Tercero"]
-    cols_tabla = [c for c in cols_tabla if c in df.columns]
-    st.dataframe(df[cols_tabla].sort_values("Fecha", ascending=False).head(20).reset_index(drop=True), use_container_width=True)
+    st.markdown("### Últimas visitas")
+    st.dataframe(df.tail(20), use_container_width=True)
