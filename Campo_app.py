@@ -719,16 +719,21 @@ elif st.session_state.pagina == "dashboard":
                 "Total": total_con,
                 "Etiqueta": f"{round(pct,1)}%  ({total_con}/{total_visitas_pres})"
             })
-    df_pres = pd.DataFrame(presencia_pct).sort_values("Presencia %", ascending=True)
-    fig_pres = px.bar(df_pres, x="Presencia %", y="Producto", orientation="h",
+    df_pres = pd.DataFrame(presencia_pct).sort_values("Presencia %", ascending=False)
+    fig_pres = px.bar(df_pres, x="Producto", y="Presencia %",
                       color="Presencia %",
                       color_continuous_scale=["#e8e6e0", "#7b5ea7"],
-                      range_x=[0, 110],
+                      range_y=[0, 115],
                       text="Etiqueta",
                       custom_data=["Total", "Etiqueta"])
-    fig_pres.update_traces(textposition="outside", textfont_size=11)
-    fig_pres.update_layout(plot_bgcolor="white", paper_bgcolor="white", font_family="DM Sans",
-                           margin=dict(t=10, b=20, r=160), coloraxis_showscale=False)
+    fig_pres.update_traces(textposition="outside", textfont_size=10)
+    fig_pres.update_layout(
+        plot_bgcolor="white", paper_bgcolor="white", font_family="DM Sans",
+        margin=dict(t=40, b=10, l=10, r=10),
+        coloraxis_showscale=False,
+        xaxis=dict(title="Producto", tickangle=-30),
+        yaxis=dict(title="Presencia %", range=[0, 115])
+    )
     st.plotly_chart(fig_pres, use_container_width=True)
 
     st.markdown("---")
