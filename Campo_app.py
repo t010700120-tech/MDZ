@@ -570,9 +570,10 @@ elif st.session_state.pagina == "dashboard":
                                    margin=dict(t=20, b=5), legend_title_text="")
             st.plotly_chart(fig_terc, use_container_width=True)
             if "Marca_Tercero" in df_f.columns:
+                df_f["Marca_Tercero"] = df_f["Marca_Tercero"].astype(str)
                 df_marcas = df_f[
                     (df_f["Colocacion_Terceros"] == "Sí") &
-                    (df_f["Marca_Tercero"].notna()) &
+                    (df_f["Marca_Tercero"].str.strip().str.lower() != "nan") &
                     (df_f["Marca_Tercero"].str.strip() != "")
                 ]["Marca_Tercero"].str.strip().str.upper().value_counts().reset_index()
                 df_marcas.columns = ["Marca", "Visitas"]
