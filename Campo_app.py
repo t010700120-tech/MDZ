@@ -626,15 +626,72 @@ elif st.session_state.pagina == "dashboard":
             df_map["Longitud"] = pd.to_numeric(df_map["Longitud"], errors="coerce")
             df_map = df_map.dropna(subset=["Latitud", "Longitud"])
             if not df_map.empty:
-                fig_map = px.scatter_mapbox(
-                    df_map, lat="Latitud", lon="Longitud",
-                    hover_name="Nombre_Cliente",
-                    hover_data={"Zona": True, "Efectividad_Soles": True, "Giro_Negocio": True},
-                    color="Zona" if "Zona" in df_map.columns else None,
-                    zoom=14, height=350
+                import json
+
+                # Colores por zona
+                zonas_unicas = df_map["Zona"].dropna().unique().tolist() if "Zona" in df_map.columns else []
+                palette = ["#4472C4","#e05252","#6a9e4f","#FF7F0E","#7b5ea7","#FFBF00","#2196F3","#00BCD4"]
+                zona_color = {z: palette[i % len(palette)] for i, z in enumerate(zonas_unicas)}
+                df_map["_color"] = df_map["Zona"].map(zona_color).fillna("#888888")
+                df_map["_size"] = 12
+
+                fig_map = go.Figure()
+
+                # Capa de sombreado por zona (convex hull aproximado con scatter grande)
+                for zona, grp in df_map.groupby("Zona"):
+                    if len(grp) >= 1:
+                        color_hex = zona_color.get(zona, "#888888")
+                        # Convertir hex a rgba
+                        r = int(color_hex[1:3], 16)
+                        g = int(color_hex[3:5], 16)
+                        b = int(color_hex[5:7], 16)
+                        fig_map.add_trace(go.Scattermapbox(
+                            lat=grp["Latitud"].tolist(),
+                            lon=grp["Longitud"].tolist(),
+                            mode="markers",
+                            marker=dict(size=40, color=f"rgba({r},{g},{b},0.18)"),
+                            hoverinfo="skip",
+                            showlegend=False,
+                            name=f"_sombra_{zona}"
+                        ))
+
+                # Puntos principales por zona
+                for zona, grp in df_map.groupby("Zona"):
+                    color_hex = zona_color.get(zona, "#888888")
+                    giro_col = grp["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
+                    fig_map.add_trace(go.Scattermapbox(
+                        lat=grp["Latitud"].tolist(),
+                        lon=grp["Longitud"].tolist(),
+                        mode="markers",
+                        marker=dict(size=13, color=color_hex),
+                        name=zona,
+                        text=grp["Nombre_Cliente"].tolist(),
+                        customdata=list(zip(
+                            grp["Zona"].tolist(),
+                            grp["Efectividad_Soles"].tolist(),
+                            giro_col.tolist()
+                        )),
+                        hovertemplate=(
+                            "<b>%{text}</b><br>"
+                            "Zona: %{customdata[0]}<br>"
+                            "Venta: S/ %{customdata[1]}<br>"
+                            "Giro: %{customdata[2]}<extra></extra>"
+                        )
+                    ))
+
+                # Zoom automático al centro de todos los puntos
+                lat_c = df_map["Latitud"].mean()
+                lon_c = df_map["Longitud"].mean()
+                lat_rng = df_map["Latitud"].max() - df_map["Latitud"].min()
+                zoom_auto = 13 if lat_rng < 0.01 else (11 if lat_rng < 0.05 else 9)
+
+                fig_map.update_layout(
+                    mapbox=dict(style="open-street-map", center=dict(lat=lat_c, lon=lon_c), zoom=zoom_auto),
+                    margin=dict(t=0, b=0, l=0, r=0),
+                    height=380,
+                    legend=dict(title="Zona", bgcolor="rgba(255,255,255,0.85)", bordercolor="#ddd", borderwidth=1),
+                    font_family="DM Sans"
                 )
-                fig_map.update_layout(mapbox_style="open-street-map",
-                                      margin=dict(t=0, b=0, l=0, r=0))
                 st.plotly_chart(fig_map, use_container_width=True)
             else:
                 st.info("Agrega visitas con latitud y longitud para ver el mapa.")
@@ -650,18 +707,28 @@ elif st.session_state.pagina == "dashboard":
         "TRIDENT_5s": "TRIDENT 5s", "HALLS_12s": "HALLS 12s", "CHICLETS_2S": "CHICLETS 2S"
     }
     presencia_pct = []
+    total_visitas_pres = len(df_f)
     for key, label in productos.items():
         if key in df_f.columns:
-            pct = pd.to_numeric(df_f[key], errors="coerce").mean() * 100
-            presencia_pct.append({"Producto": label, "Presencia %": round(pct, 1)})
+            serie = pd.to_numeric(df_f[key], errors="coerce")
+            total_con = int(serie.sum())
+            pct = serie.mean() * 100
+            presencia_pct.append({
+                "Producto": label,
+                "Presencia %": round(pct, 1),
+                "Total": total_con,
+                "Etiqueta": f"{round(pct,1)}%  ({total_con}/{total_visitas_pres})"
+            })
     df_pres = pd.DataFrame(presencia_pct).sort_values("Presencia %", ascending=True)
     fig_pres = px.bar(df_pres, x="Presencia %", y="Producto", orientation="h",
                       color="Presencia %",
                       color_continuous_scale=["#e8e6e0", "#7b5ea7"],
-                      range_x=[0, 100], text="Presencia %")
-    fig_pres.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+                      range_x=[0, 110],
+                      text="Etiqueta",
+                      custom_data=["Total", "Etiqueta"])
+    fig_pres.update_traces(textposition="outside", textfont_size=11)
     fig_pres.update_layout(plot_bgcolor="white", paper_bgcolor="white", font_family="DM Sans",
-                           margin=dict(t=10, b=20), coloraxis_showscale=False)
+                           margin=dict(t=10, b=20, r=160), coloraxis_showscale=False)
     st.plotly_chart(fig_pres, use_container_width=True)
 
     st.markdown("---")
