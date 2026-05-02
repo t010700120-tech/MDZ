@@ -89,7 +89,7 @@ if st.session_state.pagina == "formulario":
     if not df_check.empty:
         col_nav1, col_nav2 = st.columns([6, 1])
         with col_nav2:
-            if st.button("Ver Dashboard"):
+            if st.button("📊 Ver Dashboard"):
                 st.session_state.pagina = "dashboard"
                 st.rerun()
 
@@ -98,7 +98,7 @@ if st.session_state.pagina == "formulario":
 
     # ─── UBICACIÓN DEL PDC ────────────────────────────────────────────────
     import requests as _req
-    st.markdown("### Ubicación del PDC")
+    st.markdown("### 📍 Ubicación del PDC")
 
     # ── Si ya hay coords guardadas ─────────────────────────────────────────
     if st.session_state.gps_lat and st.session_state.gps_lon:
@@ -111,7 +111,7 @@ if st.session_state.pagina == "formulario":
             st.rerun()
     else:
         # ── Buscar por dirección (siempre disponible) ─────────────────────
-        st.caption("O busca la dirección del PDC:")
+        st.caption("Busca la dirección del PDC:")
         col_dir1, col_dir2 = st.columns([4, 1])
         with col_dir1:
             dir_input = st.text_input(
@@ -170,7 +170,7 @@ if st.session_state.pagina == "formulario":
     with st.form("form_visita", clear_on_submit=False):
 
         # ─── SECCIÓN: DATOS DEL CLIENTE ───────────────────────────────────
-        st.markdown("### Datos del Cliente")
+        st.markdown("### 🏪 Datos del Cliente")
         col1, col2, col3 = st.columns(3)
         with col1:
             fecha = st.date_input("Fecha de Visita", value=date.today())
@@ -199,7 +199,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── SECCIÓN: DATOS DEL VENDEDOR ──────────────────────────────────
-        st.markdown("### Datos del Vendedor")
+        st.markdown("### 🧑‍💼 Datos del Vendedor")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
             vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
@@ -211,7 +211,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── PRESENCIA BISCUITS ───────────────────────────────────────────
-        st.markdown("### Presencia Biscuits")
+        st.markdown("### 🍪 Presencia Biscuits")
         biscuits = {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
             "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
@@ -227,7 +227,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── PRESENCIA G&C ────────────────────────────────────────────────
-        st.markdown("### Presencia G&C")
+        st.markdown("### 🍬 Presencia G&C")
         gyc = {
             "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
             "HALLS_12s": "HALLS 12s", "HALLS_100s": "HALLS 100s",
@@ -242,7 +242,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── TIPOS DE EXHIBIDORES ─────────────────────────────────────────
-        st.markdown("### Tipos de Exhibidores")
+        st.markdown("### 🗂️ Tipos de Exhibidores")
         tipos = {
             "LEGOS_GC": "LEGOS G&C",
             "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -257,7 +257,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── CONTAMINACIÓN ────────────────────────────────────────────────
-        st.markdown("### Contaminación de Exhibidores")
+        st.markdown("### ⚠️ Contaminación de Exhibidores")
         cont = {
             "CONT_LEGOS_GC": "LEGOS G&C",
             "CONT_TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -276,7 +276,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── VISIBILIDAD ──────────────────────────────────────────────────
-        st.markdown("### Visibilidad por Exhibidor")
+        st.markdown("### 👁️ Visibilidad por Exhibidor")
         st.markdown(
             '<div class="leyenda-box">0 = No Tiene &nbsp;&nbsp;|&nbsp;&nbsp; '
             '1 = Alta Visibilidad &nbsp;&nbsp;|&nbsp;&nbsp; 2 = Visibilidad Media &nbsp;&nbsp;|&nbsp;&nbsp; '
@@ -299,7 +299,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── COLOCACIÓN TERCEROS ──────────────────────────────────────────
-        st.markdown("### Colocación de Terceros")
+        st.markdown("### 🏷️ Colocación de Terceros")
         col_terc1, col_terc2 = st.columns([1, 3])
         with col_terc1:
             colocacion_terceros = st.radio("¿Hay colocación de terceros?", options=["No", "Sí"], horizontal=True)
@@ -318,7 +318,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── KPIs NUMÉRICOS (sin Ticket Promedio) ─────────────────────────
-        st.markdown("### Indicadores de la visita")
+        st.markdown("### 📊 Indicadores de la visita")
         k1, k2 = st.columns(2)
         with k1:
             efectividad_soles = st.number_input(
@@ -332,12 +332,12 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── IMAGEN ───────────────────────────────────────────────────────
-        st.markdown("### Evidencia fotográfica")
+        st.markdown("### 📷 Evidencia fotográfica")
         imagen_subida = st.file_uploader("Sube una imagen de la visita (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
         st.markdown("---")
 
-        submitted = st.form_submit_button("Guardar y ver dashboard", use_container_width=True)
+        submitted = st.form_submit_button("💾 Guardar registro", use_container_width=True)
 
         if submitted:
             if not codigo_pdc or not nombre_cliente or giro_negocio == "Selecciona...":
@@ -390,20 +390,20 @@ elif st.session_state.pagina == "dashboard":
     # ── BARRA SUPERIOR ────────────────────────────────────────────────────
     col_title, col_btn1, col_btn2, col_btn3 = st.columns([4, 1, 1, 1])
     with col_title:
-        st.markdown("# Dashboard - Supervisión Canal Tradicional")
+        st.markdown("# Dashboard — Supervisión Canal Tradicional")
     with col_btn1:
-        if st.button("Ingresar datos"):
+        if st.button("← Ingresar datos"):
             st.session_state.pagina = "formulario"
             st.rerun()
     with col_btn2:
-        if st.button("Nueva visita"):
+        if st.button("＋ Nueva visita"):
             st.session_state.pagina = "formulario"
             st.rerun()
     with col_btn3:
         # Botón de eliminar historial con confirmación
         if not st.session_state.confirmar_eliminar:
             st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-            if st.button("Eliminar historial"):
+            if st.button("🗑 Eliminar historial"):
                 st.session_state.confirmar_eliminar = True
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -412,7 +412,7 @@ elif st.session_state.pagina == "dashboard":
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-                if st.button("Sí, eliminar todo"):
+                if st.button("Confirmar eliminación"):
                     eliminar_historial()
                     st.session_state.confirmar_eliminar = False
                     st.session_state.pagina = "formulario"
@@ -434,7 +434,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── FILTRO DE FECHAS ──────────────────────────────────────────────────
-    st.markdown("#### Filtrar por rango de fechas")
+    st.markdown("#### 📅 Rango de fechas")
     fecha_min = df["Fecha"].min().date()
     fecha_max = df["Fecha"].max().date()
 
@@ -496,7 +496,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── TICKET PROMEDIO POR VENDEDOR (tabla detallada) ────────────────────
-    st.markdown("#### Ticket Promedio por Vendedor y Día")
+    st.markdown("#### 📈 Ticket Promedio por Vendedor y Día")
     st.caption("Ventas totales del vendedor ÷ clientes únicos visitados ese día")
     ticket_display = ticket_calc.rename(columns={
         "Vendedor": "Vendedor",
@@ -515,7 +515,7 @@ elif st.session_state.pagina == "dashboard":
     col_g1, col_g2, col_g3 = st.columns(3)
 
     with col_g1:
-        st.markdown("#### Colocación Exhibidores")
+        st.markdown("#### 🗂️ Colocación Exhibidores")
         exhib_cols = {
             "LEGOS_GC": "LEGOS (G&C)",
             "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -543,7 +543,7 @@ elif st.session_state.pagina == "dashboard":
         st.plotly_chart(fig_exhib, use_container_width=True)
 
     with col_g2:
-        st.markdown("#### Giros de Negocio")
+        st.markdown("#### 🏬 Giros de Negocio")
         if "Giro_Negocio" in df_f.columns:
             df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
             df_giro.columns = ["Giro", "Visitas"]
@@ -555,7 +555,7 @@ elif st.session_state.pagina == "dashboard":
             st.plotly_chart(fig_giro, use_container_width=True)
 
     with col_g3:
-        st.markdown("#### Colocación de Terceros")
+        st.markdown("#### 🏷️ Colocación de Terceros")
         if "Colocacion_Terceros" in df_f.columns:
             df_terc_sino = df_f["Colocacion_Terceros"].value_counts().reset_index()
             df_terc_sino.columns = ["Estado", "Cantidad"]
@@ -577,7 +577,7 @@ elif st.session_state.pagina == "dashboard":
                 ]["Marca_Tercero"].str.strip().str.upper().value_counts().reset_index()
                 df_marcas.columns = ["Marca", "Visitas"]
                 if not df_marcas.empty:
-                    st.caption("Marcas de terceros detectadas")
+                    st.caption("Marcas detectadas")
                     fig_marcas = px.bar(
                         df_marcas, x="Visitas", y="Marca", orientation="h",
                         text="Visitas", color_discrete_sequence=["#e05252"]
@@ -596,7 +596,7 @@ elif st.session_state.pagina == "dashboard":
     col_g4, col_g5 = st.columns(2)
 
     with col_g4:
-        st.markdown("#### Efectividad")
+        st.markdown("#### 📊 Efectividad")
         df_f["Concreto"] = df_f["Efectividad_Soles"].apply(
             lambda x: "CONCRETO VENTA" if x > 0 else "NO CONCRETO VENTA"
         )
@@ -618,7 +618,7 @@ elif st.session_state.pagina == "dashboard":
         st.plotly_chart(fig_efec, use_container_width=True)
 
     with col_g5:
-        st.markdown("#### Mapa de visitas")
+        st.markdown("#### 📍 Mapa de Visitas")
         if "Latitud" in df_f.columns and "Longitud" in df_f.columns:
             df_map = df_f.copy()
             df_map["Latitud"] = pd.to_numeric(df_map["Latitud"], errors="coerce")
@@ -641,7 +641,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── PRESENCIA DE PRODUCTOS ────────────────────────────────────────────
-    st.markdown("#### Presencia de productos (% de visitas)")
+    st.markdown("#### 📦 Presencia de Productos (% de visitas)")
     productos = {
         "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
         "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
@@ -666,7 +666,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── TABLA ÚLTIMAS VISITAS ─────────────────────────────────────────────
-    st.markdown("#### Últimas visitas")
+    st.markdown("#### 📋 Últimas Visitas")
     cols_tabla = [
         "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
         "Vendedor", "Codigo_Vendedor", "Mesa", "Zona",
@@ -681,7 +681,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── DESCARGAS ─────────────────────────────────────────────────────────
-    st.markdown("#### Descargas")
+    st.markdown("#### ⬇️ Descargas")
     dcol1, dcol2 = st.columns(2)
 
     with dcol1:
@@ -697,7 +697,7 @@ elif st.session_state.pagina == "dashboard":
                            errors="ignore").to_excel(writer, index=False, sheet_name="Visitas")
         buffer.seek(0)
         st.download_button(
-            label="Descargar datos en Excel",
+            label="⬇️ Descargar Excel",
             data=buffer,
             file_name=f"visitas_MDZ_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -715,7 +715,7 @@ elif st.session_state.pagina == "dashboard":
                     zf.write(img_path, os.path.basename(img_path))
             zip_buffer.seek(0)
             st.download_button(
-                label=f"Descargar imágenes ({len(imagenes)} fotos)",
+                label=f"🖼️ Descargar imágenes ({len(imagenes)} fotos)",
                 data=zip_buffer,
                 file_name=f"imagenes_MDZ_{date.today()}.zip",
                 mime="application/zip",
