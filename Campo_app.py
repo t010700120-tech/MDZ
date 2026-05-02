@@ -8,7 +8,7 @@ import io
 import base64
 import zipfile
 
-st.set_page_config(page_title="SUPERVISIÓN CANAL TRADICIONAL", layout="wide", page_icon="📊")
+st.set_page_config(page_title="SUPERVISIÓN CANAL TRADICIONAL", layout="wide", page_icon=None)
 
 st.markdown("""
 <style>
@@ -89,89 +89,29 @@ if st.session_state.pagina == "formulario":
     if not df_check.empty:
         col_nav1, col_nav2 = st.columns([6, 1])
         with col_nav2:
-            if st.button("📊 Ver Dashboard"):
+            if st.button("Ver Dashboard"):
                 st.session_state.pagina = "dashboard"
                 st.rerun()
 
-    st.markdown("# 📋 Registro de Visita")
+    st.markdown("# Registro de Visita")
     st.markdown("---")
 
     # ─── UBICACIÓN DEL PDC ────────────────────────────────────────────────
     import requests as _req
-    import streamlit.components.v1 as components
-
-    st.markdown("### 📍 Ubicación del PDC")
-
-    # Leer coords desde query params (vienen del GPS tras recarga)
-    qp = st.query_params
-    if "lat" in qp and "lon" in qp and not st.session_state.gps_lat:
-        st.session_state.gps_lat = str(qp["lat"])
-        st.session_state.gps_lon = str(qp["lon"])
-        st.query_params.clear()
+    st.markdown("### Ubicación del PDC")
 
     # ── Si ya hay coords guardadas ─────────────────────────────────────────
     if st.session_state.gps_lat and st.session_state.gps_lon:
         st.success(f"✅ Ubicación guardada: **{st.session_state.gps_lat}, {st.session_state.gps_lon}**")
-        if st.button("🔄 Cambiar ubicación"):
+        if st.button("Cambiar ubicación"):
             st.session_state.gps_lat = ""
             st.session_state.gps_lon = ""
             if "geo_resultados" in st.session_state:
                 del st.session_state["geo_resultados"]
             st.rerun()
     else:
-        # ── OPCIÓN 1: Botón GPS (funciona en HTTPS / Streamlit Cloud) ──────
-        gps_html = """
-        <style>
-          .ubibtn {
-            background:#1a1a1a; color:white; border:none; border-radius:8px;
-            padding:10px 20px; font-size:14px; cursor:pointer;
-            display:inline-flex; align-items:center; gap:8px; margin-bottom:4px;
-          }
-          .ubibtn:hover{background:#333;}
-          .ubibtn:disabled{background:#aaa;cursor:not-allowed;}
-          #gmsg{font-size:13px;color:#555;margin-top:5px;}
-        </style>
-        <button class="ubibtn" id="gbtn" onclick="doGPS()">
-          📍 Usar mi ubicación actual (GPS)
-        </button>
-        <div id="gmsg">Presiona para capturar automáticamente tus coordenadas.</div>
-        <script>
-        function doGPS(){
-          var btn=document.getElementById("gbtn");
-          var msg=document.getElementById("gmsg");
-          if(!navigator.geolocation){
-            msg.innerHTML="❌ Tu navegador no soporta geolocalización."; return;
-          }
-          btn.disabled=true;
-          msg.innerHTML="⏳ Obteniendo ubicación, por favor espera...";
-          navigator.geolocation.getCurrentPosition(
-            function(p){
-              var la=p.coords.latitude.toFixed(6);
-              var lo=p.coords.longitude.toFixed(6);
-              msg.innerHTML="✅ Listo: <b>"+la+", "+lo+"</b> — recargando...";
-              var u=new URL(window.parent.location.href);
-              u.searchParams.set("lat",la);
-              u.searchParams.set("lon",lo);
-              window.parent.location.href=u.toString();
-            },
-            function(e){
-              var m={1:"❌ Permiso denegado. Activa la ubicación en tu navegador.",
-                     2:"❌ Posición no disponible.",
-                     3:"❌ Tiempo agotado, intenta de nuevo."};
-              msg.innerHTML=m[e.code]||"❌ Error desconocido.";
-              btn.disabled=false;
-            },
-            {enableHighAccuracy:true,timeout:15000,maximumAge:0}
-          );
-        }
-        </script>
-        """
-        components.html(gps_html, height=95)
-
-        st.markdown("---")
-
-        # ── OPCIÓN 2: Buscar por dirección (siempre disponible) ────────────
-        st.caption("🔍 O busca la dirección del PDC:")
+        # ── Buscar por dirección (siempre disponible) ─────────────────────
+        st.caption("O busca la dirección del PDC:")
         col_dir1, col_dir2 = st.columns([4, 1])
         with col_dir1:
             dir_input = st.text_input(
@@ -181,7 +121,7 @@ if st.session_state.pagina == "formulario":
                 key="dir_input"
             )
         with col_dir2:
-            buscar = st.button("🔍 Buscar", use_container_width=True, key="btn_buscar_dir")
+            buscar = st.button("Buscar", use_container_width=True, key="btn_buscar_dir")
 
         if buscar and dir_input.strip():
             try:
@@ -203,7 +143,7 @@ if st.session_state.pagina == "formulario":
             res = st.session_state["geo_resultados"]
             opts = {r["display_name"][:90]: (r["lat"], r["lon"]) for r in res}
             elegida = st.selectbox("Selecciona la ubicación:", list(opts.keys()), key="geo_sel")
-            if st.button("✅ Confirmar esta ubicación", key="geo_ok"):
+            if st.button("Confirmar esta ubicación", key="geo_ok"):
                 la, lo = opts[elegida]
                 st.session_state.gps_lat = str(round(float(la), 6))
                 st.session_state.gps_lon = str(round(float(lo), 6))
@@ -211,7 +151,7 @@ if st.session_state.pagina == "formulario":
                 st.rerun()
 
         # ── OPCIÓN 3: Coordenadas manuales ─────────────────────────────────
-        with st.expander("✏️ Ingresar coordenadas manualmente"):
+        with st.expander("Ingresar coordenadas manualmente"):
             cm1, cm2, cm3 = st.columns([2, 2, 1])
             with cm1:
                 lat_m = st.text_input("Latitud", placeholder="-8.111640", key="lat_man")
@@ -219,7 +159,7 @@ if st.session_state.pagina == "formulario":
                 lon_m = st.text_input("Longitud", placeholder="-79.028700", key="lon_man")
             with cm3:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("💾 Guardar", key="btn_manual"):
+                if st.button("Guardar", key="btn_manual"):
                     if lat_m and lon_m:
                         st.session_state.gps_lat = lat_m.strip()
                         st.session_state.gps_lon = lon_m.strip()
@@ -230,7 +170,7 @@ if st.session_state.pagina == "formulario":
     with st.form("form_visita", clear_on_submit=False):
 
         # ─── SECCIÓN: DATOS DEL CLIENTE ───────────────────────────────────
-        st.markdown("### 👤 Datos del Cliente")
+        st.markdown("### Datos del Cliente")
         col1, col2, col3 = st.columns(3)
         with col1:
             fecha = st.date_input("Fecha de Visita", value=date.today())
@@ -259,7 +199,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── SECCIÓN: DATOS DEL VENDEDOR ──────────────────────────────────
-        st.markdown("### 🧑‍💼 Datos del Vendedor")
+        st.markdown("### Datos del Vendedor")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
             vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
@@ -271,7 +211,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── PRESENCIA BISCUITS ───────────────────────────────────────────
-        st.markdown("### 🍪 Presencia Biscuits")
+        st.markdown("### Presencia Biscuits")
         biscuits = {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
             "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
@@ -287,7 +227,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── PRESENCIA G&C ────────────────────────────────────────────────
-        st.markdown("### 🍬 Presencia G&C")
+        st.markdown("### Presencia G&C")
         gyc = {
             "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
             "HALLS_12s": "HALLS 12s", "HALLS_100s": "HALLS 100s",
@@ -302,7 +242,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── TIPOS DE EXHIBIDORES ─────────────────────────────────────────
-        st.markdown("### 🏪 Tipos de Exhibidores")
+        st.markdown("### Tipos de Exhibidores")
         tipos = {
             "LEGOS_GC": "LEGOS G&C",
             "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -317,7 +257,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── CONTAMINACIÓN ────────────────────────────────────────────────
-        st.markdown("### ⚠️ Contaminación de Exhibidores")
+        st.markdown("### Contaminación de Exhibidores")
         cont = {
             "CONT_LEGOS_GC": "LEGOS G&C",
             "CONT_TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -336,7 +276,7 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── VISIBILIDAD ──────────────────────────────────────────────────
-        st.markdown("### 👁️ Visibilidad por Exhibidor")
+        st.markdown("### Visibilidad por Exhibidor")
         st.markdown(
             '<div class="leyenda-box">0 = No Tiene &nbsp;&nbsp;|&nbsp;&nbsp; '
             '1 = Alta Visibilidad &nbsp;&nbsp;|&nbsp;&nbsp; 2 = Visibilidad Media &nbsp;&nbsp;|&nbsp;&nbsp; '
@@ -359,17 +299,26 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── COLOCACIÓN TERCEROS ──────────────────────────────────────────
-        st.markdown("### 🏷️ Colocación de Terceros")
-        col_terc1, col_terc2 = st.columns([1, 2])
+        st.markdown("### Colocación de Terceros")
+        col_terc1, col_terc2 = st.columns([1, 3])
         with col_terc1:
             colocacion_terceros = st.radio("¿Hay colocación de terceros?", options=["No", "Sí"], horizontal=True)
         with col_terc2:
-            marca_tercero = st.text_input("Marca del tercero (si aplica)", placeholder="Ej: Gloria, Alicorp...")
+            t1, t2, t3, t4 = st.columns(4)
+            with t1:
+                marca_tercero_1 = st.text_input("Marca 1", placeholder="Ej: Gloria", key="mt1")
+            with t2:
+                marca_tercero_2 = st.text_input("Marca 2", placeholder="Ej: Alicorp", key="mt2")
+            with t3:
+                marca_tercero_3 = st.text_input("Marca 3", placeholder="Ej: Laive", key="mt3")
+            with t4:
+                marca_tercero_4 = st.text_input("Marca 4", placeholder="Ej: Nestlé", key="mt4")
+        marca_tercero = ", ".join([m for m in [marca_tercero_1, marca_tercero_2, marca_tercero_3, marca_tercero_4] if m.strip()])
 
         st.markdown("---")
 
         # ─── KPIs NUMÉRICOS (sin Ticket Promedio) ─────────────────────────
-        st.markdown("### 📊 Indicadores de la visita")
+        st.markdown("### Indicadores de la visita")
         k1, k2 = st.columns(2)
         with k1:
             efectividad_soles = st.number_input(
@@ -383,12 +332,12 @@ if st.session_state.pagina == "formulario":
         st.markdown("---")
 
         # ─── IMAGEN ───────────────────────────────────────────────────────
-        st.markdown("### 📷 Evidencia fotográfica")
+        st.markdown("### Evidencia fotográfica")
         imagen_subida = st.file_uploader("Sube una imagen de la visita (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
         st.markdown("---")
 
-        submitted = st.form_submit_button("✅ Guardar y ver dashboard →", use_container_width=True)
+        submitted = st.form_submit_button("Guardar y ver dashboard", use_container_width=True)
 
         if submitted:
             if not codigo_pdc or not nombre_cliente or giro_negocio == "Selecciona...":
@@ -441,20 +390,20 @@ elif st.session_state.pagina == "dashboard":
     # ── BARRA SUPERIOR ────────────────────────────────────────────────────
     col_title, col_btn1, col_btn2, col_btn3 = st.columns([4, 1, 1, 1])
     with col_title:
-        st.markdown("# 📊 Dashboard - Supervisión Canal Tradicional")
+        st.markdown("# Dashboard - Supervisión Canal Tradicional")
     with col_btn1:
-        if st.button("← Ingresar datos"):
+        if st.button("Ingresar datos"):
             st.session_state.pagina = "formulario"
             st.rerun()
     with col_btn2:
-        if st.button("＋ Nueva visita"):
+        if st.button("Nueva visita"):
             st.session_state.pagina = "formulario"
             st.rerun()
     with col_btn3:
         # Botón de eliminar historial con confirmación
         if not st.session_state.confirmar_eliminar:
             st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-            if st.button("🗑️ Eliminar historial"):
+            if st.button("Eliminar historial"):
                 st.session_state.confirmar_eliminar = True
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -463,14 +412,14 @@ elif st.session_state.pagina == "dashboard":
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-                if st.button("✅ Sí, eliminar todo"):
+                if st.button("Sí, eliminar todo"):
                     eliminar_historial()
                     st.session_state.confirmar_eliminar = False
                     st.session_state.pagina = "formulario"
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with c2:
-                if st.button("❌ Cancelar"):
+                if st.button("Cancelar"):
                     st.session_state.confirmar_eliminar = False
                     st.rerun()
 
@@ -485,7 +434,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── FILTRO DE FECHAS ──────────────────────────────────────────────────
-    st.markdown("#### 📅 Filtrar por rango de fechas")
+    st.markdown("#### Filtrar por rango de fechas")
     fecha_min = df["Fecha"].min().date()
     fecha_max = df["Fecha"].max().date()
 
@@ -547,7 +496,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── TICKET PROMEDIO POR VENDEDOR (tabla detallada) ────────────────────
-    st.markdown("#### 🧑‍💼 Ticket Promedio por Vendedor y Día")
+    st.markdown("#### Ticket Promedio por Vendedor y Día")
     st.caption("Ventas totales del vendedor ÷ clientes únicos visitados ese día")
     ticket_display = ticket_calc.rename(columns={
         "Vendedor": "Vendedor",
@@ -566,7 +515,7 @@ elif st.session_state.pagina == "dashboard":
     col_g1, col_g2, col_g3 = st.columns(3)
 
     with col_g1:
-        st.markdown("#### 🏪 Colocación Exhibidores")
+        st.markdown("#### Colocación Exhibidores")
         exhib_cols = {
             "LEGOS_GC": "LEGOS (G&C)",
             "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -594,7 +543,7 @@ elif st.session_state.pagina == "dashboard":
         st.plotly_chart(fig_exhib, use_container_width=True)
 
     with col_g2:
-        st.markdown("#### 🏬 Giros de Negocio")
+        st.markdown("#### Giros de Negocio")
         if "Giro_Negocio" in df_f.columns:
             df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
             df_giro.columns = ["Giro", "Visitas"]
@@ -606,7 +555,7 @@ elif st.session_state.pagina == "dashboard":
             st.plotly_chart(fig_giro, use_container_width=True)
 
     with col_g3:
-        st.markdown("#### 🏷️ Colocación de Terceros")
+        st.markdown("#### Colocación de Terceros")
         if "Colocacion_Terceros" in df_f.columns:
             df_terc_sino = df_f["Colocacion_Terceros"].value_counts().reset_index()
             df_terc_sino.columns = ["Estado", "Cantidad"]
@@ -628,7 +577,7 @@ elif st.session_state.pagina == "dashboard":
                 ]["Marca_Tercero"].str.strip().str.upper().value_counts().reset_index()
                 df_marcas.columns = ["Marca", "Visitas"]
                 if not df_marcas.empty:
-                    st.caption("🔍 Marcas de terceros detectadas")
+                    st.caption("Marcas de terceros detectadas")
                     fig_marcas = px.bar(
                         df_marcas, x="Visitas", y="Marca", orientation="h",
                         text="Visitas", color_discrete_sequence=["#e05252"]
@@ -647,7 +596,7 @@ elif st.session_state.pagina == "dashboard":
     col_g4, col_g5 = st.columns(2)
 
     with col_g4:
-        st.markdown("#### 📊 Efectividad")
+        st.markdown("#### Efectividad")
         df_f["Concreto"] = df_f["Efectividad_Soles"].apply(
             lambda x: "CONCRETO VENTA" if x > 0 else "NO CONCRETO VENTA"
         )
@@ -669,7 +618,7 @@ elif st.session_state.pagina == "dashboard":
         st.plotly_chart(fig_efec, use_container_width=True)
 
     with col_g5:
-        st.markdown("#### 📍 Mapa de visitas")
+        st.markdown("#### Mapa de visitas")
         if "Latitud" in df_f.columns and "Longitud" in df_f.columns:
             df_map = df_f.copy()
             df_map["Latitud"] = pd.to_numeric(df_map["Latitud"], errors="coerce")
@@ -692,7 +641,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── PRESENCIA DE PRODUCTOS ────────────────────────────────────────────
-    st.markdown("#### 📦 Presencia de productos (% de visitas)")
+    st.markdown("#### Presencia de productos (% de visitas)")
     productos = {
         "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
         "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
@@ -717,7 +666,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── TABLA ÚLTIMAS VISITAS ─────────────────────────────────────────────
-    st.markdown("#### 📋 Últimas visitas")
+    st.markdown("#### Últimas visitas")
     cols_tabla = [
         "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
         "Vendedor", "Codigo_Vendedor", "Mesa", "Zona",
@@ -732,7 +681,7 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     # ── DESCARGAS ─────────────────────────────────────────────────────────
-    st.markdown("#### ⬇️ Descargas")
+    st.markdown("#### Descargas")
     dcol1, dcol2 = st.columns(2)
 
     with dcol1:
@@ -748,7 +697,7 @@ elif st.session_state.pagina == "dashboard":
                            errors="ignore").to_excel(writer, index=False, sheet_name="Visitas")
         buffer.seek(0)
         st.download_button(
-            label="📥 Descargar datos en Excel",
+            label="Descargar datos en Excel",
             data=buffer,
             file_name=f"visitas_MDZ_{date.today()}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -766,7 +715,7 @@ elif st.session_state.pagina == "dashboard":
                     zf.write(img_path, os.path.basename(img_path))
             zip_buffer.seek(0)
             st.download_button(
-                label=f"🖼️ Descargar imágenes ({len(imagenes)} fotos)",
+                label=f"Descargar imágenes ({len(imagenes)} fotos)",
                 data=zip_buffer,
                 file_name=f"imagenes_MDZ_{date.today()}.zip",
                 mime="application/zip",
