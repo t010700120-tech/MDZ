@@ -474,14 +474,39 @@ elif st.session_state.pagina == "dashboard":
 
     with col_g3:
         st.markdown("#### 🏷️ Colocación de Terceros")
-        if "Colocacion_Terceros" in df_f.columns and "Giro_Negocio" in df_f.columns:
-            df_f["Giro_Corto"] = df_f["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True)
-            df_terc = df_f.groupby(["Giro_Corto", "Colocacion_Terceros"]).size().reset_index(name="Cantidad")
-            fig_terc = px.pie(df_terc, names="Giro_Corto", values="Cantidad",
-                              color_discrete_sequence=["#4472C4", "#FF7F0E", "#FFBF00", "#2ecc71", "#7f7f7f"])
-            fig_terc.update_traces(textinfo="label+value")
-            fig_terc.update_layout(paper_bgcolor="white", font_family="DM Sans", margin=dict(t=20, b=20))
+        if "Colocacion_Terceros" in df_f.columns:
+            df_terc_sino = df_f["Colocacion_Terceros"].value_counts().reset_index()
+            df_terc_sino.columns = ["Estado", "Cantidad"]
+            fig_terc = px.pie(
+                df_terc_sino, names="Estado", values="Cantidad",
+                hole=0.45,
+                color="Estado",
+                color_discrete_map={"Sí": "#e05252", "No": "#6a9e4f"}
+            )
+            fig_terc.update_traces(textinfo="label+percent")
+            fig_terc.update_layout(paper_bgcolor="white", font_family="DM Sans",
+                                   margin=dict(t=20, b=5), legend_title_text="")
             st.plotly_chart(fig_terc, use_container_width=True)
+            if "Marca_Tercero" in df_f.columns:
+                df_marcas = df_f[
+                    (df_f["Colocacion_Terceros"] == "Sí") &
+                    (df_f["Marca_Tercero"].notna()) &
+                    (df_f["Marca_Tercero"].str.strip() != "")
+                ]["Marca_Tercero"].str.strip().str.upper().value_counts().reset_index()
+                df_marcas.columns = ["Marca", "Visitas"]
+                if not df_marcas.empty:
+                    st.caption("🔍 Marcas de terceros detectadas")
+                    fig_marcas = px.bar(
+                        df_marcas, x="Visitas", y="Marca", orientation="h",
+                        text="Visitas", color_discrete_sequence=["#e05252"]
+                    )
+                    fig_marcas.update_traces(textposition="outside")
+                    fig_marcas.update_layout(
+                        plot_bgcolor="white", paper_bgcolor="white",
+                        font_family="DM Sans", margin=dict(t=5, b=5),
+                        xaxis_title="", yaxis_title=""
+                    )
+                    st.plotly_chart(fig_marcas, use_container_width=True)
 
     st.markdown("---")
 
