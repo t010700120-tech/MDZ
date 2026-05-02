@@ -96,78 +96,136 @@ if st.session_state.pagina == "formulario":
     st.markdown("# 📋 Registro de Visita")
     st.markdown("---")
 
-    # ─── CAPTURA GPS ──────────────────────────────────────────────────────
+    # ─── UBICACIÓN DEL PDC ────────────────────────────────────────────────
+    import requests as _req
     import streamlit.components.v1 as components
 
-    # Leer coords si vienen en la URL (query params)
+    st.markdown("### 📍 Ubicación del PDC")
+
+    # Leer coords desde query params (vienen del GPS tras recarga)
     qp = st.query_params
-    if "lat" in qp and "lon" in qp:
+    if "lat" in qp and "lon" in qp and not st.session_state.gps_lat:
         st.session_state.gps_lat = str(qp["lat"])
         st.session_state.gps_lon = str(qp["lon"])
+        st.query_params.clear()
 
-    # Mostrar coordenadas capturadas si existen
+    # ── Si ya hay coords guardadas ─────────────────────────────────────────
     if st.session_state.gps_lat and st.session_state.gps_lon:
-        st.success(f"📍 Ubicación capturada: {st.session_state.gps_lat}, {st.session_state.gps_lon}")
-        if st.button("🔄 Recapturar ubicación"):
+        st.success(f"✅ Ubicación guardada: **{st.session_state.gps_lat}, {st.session_state.gps_lon}**")
+        if st.button("🔄 Cambiar ubicación"):
             st.session_state.gps_lat = ""
             st.session_state.gps_lon = ""
-            st.query_params.clear()
+            if "geo_resultados" in st.session_state:
+                del st.session_state["geo_resultados"]
             st.rerun()
     else:
-        # HTML con JS que obtiene GPS y recarga la página con ?lat=...&lon=...
+        # ── OPCIÓN 1: Botón GPS (funciona en HTTPS / Streamlit Cloud) ──────
         gps_html = """
         <style>
-            .gps-btn {
-                background: #1a1a1a; color: white; border: none; border-radius: 8px;
-                padding: 10px 22px; font-size: 15px; font-family: 'DM Sans', sans-serif;
-                cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-                margin-bottom: 6px;
-            }
-            .gps-btn:hover { background: #333; }
-            .gps-btn:disabled { background: #999; cursor: not-allowed; }
-            #gps_msg { font-size: 13px; color: #666; margin-top: 6px; }
+          .ubibtn {
+            background:#1a1a1a; color:white; border:none; border-radius:8px;
+            padding:10px 20px; font-size:14px; cursor:pointer;
+            display:inline-flex; align-items:center; gap:8px; margin-bottom:4px;
+          }
+          .ubibtn:hover{background:#333;}
+          .ubibtn:disabled{background:#aaa;cursor:not-allowed;}
+          #gmsg{font-size:13px;color:#555;margin-top:5px;}
         </style>
-        <button class="gps-btn" id="gpsbtn" onclick="captureGPS()">
-            📍 Capturar mi ubicación actual (GPS)
+        <button class="ubibtn" id="gbtn" onclick="doGPS()">
+          📍 Usar mi ubicación actual (GPS)
         </button>
-        <div id="gps_msg">Presiona el botón para obtener tus coordenadas automáticamente.</div>
+        <div id="gmsg">Presiona para capturar automáticamente tus coordenadas.</div>
         <script>
-        function captureGPS() {
-            var btn = document.getElementById("gpsbtn");
-            var msg = document.getElementById("gps_msg");
-            if (!navigator.geolocation) {
-                msg.innerHTML = "❌ Tu navegador no soporta geolocalización.";
-                return;
-            }
-            btn.disabled = true;
-            btn.textContent = "⏳ Obteniendo ubicación...";
-            navigator.geolocation.getCurrentPosition(
-                function(pos) {
-                    var lat = pos.coords.latitude.toFixed(6);
-                    var lon = pos.coords.longitude.toFixed(6);
-                    msg.innerHTML = "✅ Ubicación obtenida: <b>" + lat + ", " + lon + "</b>. Cargando...";
-                    // Recargar página padre con coords en la URL
-                    var url = new URL(window.parent.location.href);
-                    url.searchParams.set("lat", lat);
-                    url.searchParams.set("lon", lon);
-                    window.parent.location.href = url.toString();
-                },
-                function(err) {
-                    var msgs = {
-                        1: "❌ Permiso denegado. Habilita la ubicación en tu navegador.",
-                        2: "❌ Ubicación no disponible en este dispositivo.",
-                        3: "❌ Tiempo agotado, intenta de nuevo."
-                    };
-                    msg.innerHTML = msgs[err.code] || "❌ Error al obtener ubicación.";
-                    btn.disabled = false;
-                    btn.textContent = "📍 Capturar mi ubicación actual (GPS)";
-                },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-            );
+        function doGPS(){
+          var btn=document.getElementById("gbtn");
+          var msg=document.getElementById("gmsg");
+          if(!navigator.geolocation){
+            msg.innerHTML="❌ Tu navegador no soporta geolocalización."; return;
+          }
+          btn.disabled=true;
+          msg.innerHTML="⏳ Obteniendo ubicación, por favor espera...";
+          navigator.geolocation.getCurrentPosition(
+            function(p){
+              var la=p.coords.latitude.toFixed(6);
+              var lo=p.coords.longitude.toFixed(6);
+              msg.innerHTML="✅ Listo: <b>"+la+", "+lo+"</b> — recargando...";
+              var u=new URL(window.parent.location.href);
+              u.searchParams.set("lat",la);
+              u.searchParams.set("lon",lo);
+              window.parent.location.href=u.toString();
+            },
+            function(e){
+              var m={1:"❌ Permiso denegado. Activa la ubicación en tu navegador.",
+                     2:"❌ Posición no disponible.",
+                     3:"❌ Tiempo agotado, intenta de nuevo."};
+              msg.innerHTML=m[e.code]||"❌ Error desconocido.";
+              btn.disabled=false;
+            },
+            {enableHighAccuracy:true,timeout:15000,maximumAge:0}
+          );
         }
         </script>
         """
-        components.html(gps_html, height=110)
+        components.html(gps_html, height=95)
+
+        st.markdown("---")
+
+        # ── OPCIÓN 2: Buscar por dirección (siempre disponible) ────────────
+        st.caption("🔍 O busca la dirección del PDC:")
+        col_dir1, col_dir2 = st.columns([4, 1])
+        with col_dir1:
+            dir_input = st.text_input(
+                "Dirección",
+                placeholder="Ej: Av. España 1234, Trujillo, Peru",
+                label_visibility="collapsed",
+                key="dir_input"
+            )
+        with col_dir2:
+            buscar = st.button("🔍 Buscar", use_container_width=True, key="btn_buscar_dir")
+
+        if buscar and dir_input.strip():
+            try:
+                r = _req.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": dir_input.strip(), "format": "json", "limit": 5, "countrycodes": "pe"},
+                    headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                    timeout=8
+                )
+                res = r.json()
+                if res:
+                    st.session_state["geo_resultados"] = res
+                else:
+                    st.warning("Sin resultados. Prueba con más detalle, ej: 'Av. España 123, Trujillo, La Libertad, Peru'")
+            except Exception as ex:
+                st.error(f"Error de conexión: {ex}")
+
+        if st.session_state.get("geo_resultados"):
+            res = st.session_state["geo_resultados"]
+            opts = {r["display_name"][:90]: (r["lat"], r["lon"]) for r in res}
+            elegida = st.selectbox("Selecciona la ubicación:", list(opts.keys()), key="geo_sel")
+            if st.button("✅ Confirmar esta ubicación", key="geo_ok"):
+                la, lo = opts[elegida]
+                st.session_state.gps_lat = str(round(float(la), 6))
+                st.session_state.gps_lon = str(round(float(lo), 6))
+                del st.session_state["geo_resultados"]
+                st.rerun()
+
+        # ── OPCIÓN 3: Coordenadas manuales ─────────────────────────────────
+        with st.expander("✏️ Ingresar coordenadas manualmente"):
+            cm1, cm2, cm3 = st.columns([2, 2, 1])
+            with cm1:
+                lat_m = st.text_input("Latitud", placeholder="-8.111640", key="lat_man")
+            with cm2:
+                lon_m = st.text_input("Longitud", placeholder="-79.028700", key="lon_man")
+            with cm3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("💾 Guardar", key="btn_manual"):
+                    if lat_m and lon_m:
+                        st.session_state.gps_lat = lat_m.strip()
+                        st.session_state.gps_lon = lon_m.strip()
+                        st.rerun()
+
+    st.markdown("---")
 
     with st.form("form_visita", clear_on_submit=False):
 
@@ -194,10 +252,9 @@ if st.session_state.pagina == "formulario":
         with col5:
             zona = st.text_input("Zona", placeholder="Ej: Norte, Centro, Sur...")
 
-        # ─── GPS FUERA DEL FORM ───────────────────────────────────────────
-        st.markdown("**📍 Ubicación del PDC**")
-        latitud  = st.text_input("Latitud",  value=st.session_state.gps_lat,  placeholder="Se llenará con el GPS")
-        longitud = st.text_input("Longitud", value=st.session_state.gps_lon, placeholder="Se llenará con el GPS")
+        # coords desde session_state (capturadas por búsqueda de dirección)
+        latitud  = st.session_state.gps_lat
+        longitud = st.session_state.gps_lon
 
         st.markdown("---")
 
