@@ -40,7 +40,7 @@ os.makedirs(IMG_FOLDER, exist_ok=True)
 # Ticket_Promedio se elimina del formulario; se calcula en el dashboard
 COLUMNAS = [
     "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
-    "Vendedor", "Zona", "Latitud", "Longitud",
+    "Vendedor", "Codigo_Vendedor", "Mesa", "Zona", "Latitud", "Longitud",
     "OREO_34GR", "OREO_54GR", "OREO_ROLLO", "RITZ_ROLLO", "RITZ_TACO",
     "FIELD_CC", "FIELD_DP", "FIELD_VAIN", "CLUB_SOCIAL_TRA", "CLUB_SOCIAL_SAB",
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S",
@@ -127,9 +127,13 @@ if st.session_state.pagina == "formulario":
 
         # ─── SECCIÓN: DATOS DEL VENDEDOR ──────────────────────────────────
         st.markdown("### 🧑‍💼 Datos del Vendedor")
-        col_v1, col_v2 = st.columns(2)
+        col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
             vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
+        with col_v2:
+            codigo_vendedor = st.text_input("Código de Vendedor", placeholder="Ej: VEN001")
+        with col_v3:
+            mesa = st.text_input("Mesa", placeholder="Ej: Mesa 1, Mesa Norte...")
 
         st.markdown("---")
 
@@ -270,6 +274,8 @@ if st.session_state.pagina == "formulario":
                     "Nombre_Cliente": nombre_cliente,
                     "Giro_Negocio": giro_negocio,
                     "Vendedor": vendedor,
+                    "Codigo_Vendedor": codigo_vendedor,
+                    "Mesa": mesa,
                     "Zona": zona,
                     "Latitud": latitud,
                     "Longitud": longitud,
@@ -455,7 +461,7 @@ elif st.session_state.pagina == "dashboard":
         st.plotly_chart(fig_exhib, use_container_width=True)
 
     with col_g2:
-        st.markdown("#### Giros de Negocio")
+        st.markdown("#### 🏬 Giros de Negocio")
         if "Giro_Negocio" in df_f.columns:
             df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
             df_giro.columns = ["Giro", "Visitas"]
@@ -555,7 +561,8 @@ elif st.session_state.pagina == "dashboard":
     # ── TABLA ÚLTIMAS VISITAS ─────────────────────────────────────────────
     st.markdown("#### 📋 Últimas visitas")
     cols_tabla = [
-        "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Vendedor", "Zona",
+        "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
+        "Vendedor", "Codigo_Vendedor", "Mesa", "Zona",
         "Efectividad_Soles", "Tiempo_PDC",
         "Visibilidad_Legos", "Visibilidad_Tobogan", "Visibilidad_Kiwi",
         "Colocacion_Terceros", "Marca_Tercero"
