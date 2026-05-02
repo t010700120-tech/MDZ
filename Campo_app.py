@@ -75,6 +75,10 @@ if "pagina" not in st.session_state:
     st.session_state.pagina = "formulario"
 if "confirmar_eliminar" not in st.session_state:
     st.session_state.confirmar_eliminar = False
+if "gps_lat" not in st.session_state:
+    st.session_state.gps_lat = ""
+if "gps_lon" not in st.session_state:
+    st.session_state.gps_lon = ""
 
 # ═══════════════════════════════════════════
 # PÁGINA: FORMULARIO
@@ -91,6 +95,79 @@ if st.session_state.pagina == "formulario":
 
     st.markdown("# 📋 Registro de Visita")
     st.markdown("---")
+
+    # ─── CAPTURA GPS ──────────────────────────────────────────────────────
+    import streamlit.components.v1 as components
+
+    # Leer coords si vienen en la URL (query params)
+    qp = st.query_params
+    if "lat" in qp and "lon" in qp:
+        st.session_state.gps_lat = str(qp["lat"])
+        st.session_state.gps_lon = str(qp["lon"])
+
+    # Mostrar coordenadas capturadas si existen
+    if st.session_state.gps_lat and st.session_state.gps_lon:
+        st.success(f"📍 Ubicación capturada: {st.session_state.gps_lat}, {st.session_state.gps_lon}")
+        if st.button("🔄 Recapturar ubicación"):
+            st.session_state.gps_lat = ""
+            st.session_state.gps_lon = ""
+            st.query_params.clear()
+            st.rerun()
+    else:
+        # HTML con JS que obtiene GPS y recarga la página con ?lat=...&lon=...
+        gps_html = """
+        <style>
+            .gps-btn {
+                background: #1a1a1a; color: white; border: none; border-radius: 8px;
+                padding: 10px 22px; font-size: 15px; font-family: 'DM Sans', sans-serif;
+                cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+                margin-bottom: 6px;
+            }
+            .gps-btn:hover { background: #333; }
+            .gps-btn:disabled { background: #999; cursor: not-allowed; }
+            #gps_msg { font-size: 13px; color: #666; margin-top: 6px; }
+        </style>
+        <button class="gps-btn" id="gpsbtn" onclick="captureGPS()">
+            📍 Capturar mi ubicación actual (GPS)
+        </button>
+        <div id="gps_msg">Presiona el botón para obtener tus coordenadas automáticamente.</div>
+        <script>
+        function captureGPS() {
+            var btn = document.getElementById("gpsbtn");
+            var msg = document.getElementById("gps_msg");
+            if (!navigator.geolocation) {
+                msg.innerHTML = "❌ Tu navegador no soporta geolocalización.";
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = "⏳ Obteniendo ubicación...";
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    var lat = pos.coords.latitude.toFixed(6);
+                    var lon = pos.coords.longitude.toFixed(6);
+                    msg.innerHTML = "✅ Ubicación obtenida: <b>" + lat + ", " + lon + "</b>. Cargando...";
+                    // Recargar página padre con coords en la URL
+                    var url = new URL(window.parent.location.href);
+                    url.searchParams.set("lat", lat);
+                    url.searchParams.set("lon", lon);
+                    window.parent.location.href = url.toString();
+                },
+                function(err) {
+                    var msgs = {
+                        1: "❌ Permiso denegado. Habilita la ubicación en tu navegador.",
+                        2: "❌ Ubicación no disponible en este dispositivo.",
+                        3: "❌ Tiempo agotado, intenta de nuevo."
+                    };
+                    msg.innerHTML = msgs[err.code] || "❌ Error al obtener ubicación.";
+                    btn.disabled = false;
+                    btn.textContent = "📍 Capturar mi ubicación actual (GPS)";
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+        }
+        </script>
+        """
+        components.html(gps_html, height=110)
 
     with st.form("form_visita", clear_on_submit=False):
 
@@ -117,11 +194,10 @@ if st.session_state.pagina == "formulario":
         with col5:
             zona = st.text_input("Zona", placeholder="Ej: Norte, Centro, Sur...")
 
-        col6, col7 = st.columns(2)
-        with col6:
-            latitud = st.text_input("Latitud", placeholder="Ej: -8.1116")
-        with col7:
-            longitud = st.text_input("Longitud", placeholder="Ej: -79.0287")
+        # ─── GPS FUERA DEL FORM ───────────────────────────────────────────
+        st.markdown("**📍 Ubicación del PDC**")
+        latitud  = st.text_input("Latitud",  value=st.session_state.gps_lat,  placeholder="Se llenará con el GPS")
+        longitud = st.text_input("Longitud", value=st.session_state.gps_lon, placeholder="Se llenará con el GPS")
 
         st.markdown("---")
 
