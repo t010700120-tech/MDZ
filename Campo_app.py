@@ -78,6 +78,26 @@ if "gps_lat" not in st.session_state:
     st.session_state.gps_lat = ""
 if "gps_lon" not in st.session_state:
     st.session_state.gps_lon = ""
+if "snapshots" not in st.session_state:
+    st.session_state.snapshots = {}
+
+SNAPSHOTS_FILE = "snapshots.pkl"
+
+def guardar_snapshots_disco():
+    import pickle
+    with open(SNAPSHOTS_FILE, "wb") as f:
+        pickle.dump(st.session_state.snapshots, f)
+
+def cargar_snapshots_disco():
+    import pickle
+    if os.path.exists(SNAPSHOTS_FILE):
+        with open(SNAPSHOTS_FILE, "rb") as f:
+            return pickle.load(f)
+    return {}
+
+# Cargar snapshots persistidos al iniciar
+if not st.session_state.snapshots and os.path.exists(SNAPSHOTS_FILE):
+    st.session_state.snapshots = cargar_snapshots_disco()
 
 # ═══════════════════════════════════════════
 # PÁGINA: FORMULARIO
@@ -241,7 +261,7 @@ if st.session_state.pagina == "formulario":
                 "5 - Otros (Puesto de mercado, Centros Educativos...)"
             ])
         with col5:
-            zona = st.text_input("Zona", placeholder="Ej: Norte, Centro, Sur...")
+            zona = st.selectbox("Zona", ["Selecciona...", "TRUJILLO", "VICTOR LARCO", "CALIFORNIA"])
 
         latitud  = st.session_state.gps_lat
         longitud = st.session_state.gps_lon
@@ -254,9 +274,11 @@ if st.session_state.pagina == "formulario":
         with col_v1:
             vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
         with col_v2:
-            codigo_vendedor = st.text_input("Código de Vendedor", placeholder="Ej: VEN001")
+            codigo_vendedor = st.text_input("Código de Vendedor", max_chars=8, placeholder="Ej: VEN00001")
         with col_v3:
-            mesa = st.text_input("Mesa", placeholder="Ej: Mesa 1, Mesa Norte...")
+            mesa = st.selectbox("Mesa", ["Selecciona...", "DJ1", "DJ3"])
+
+        ruta_logica = st.text_input("Ruta Lógica", placeholder="Ej: Ruta 01 - Norte")
 
         st.markdown("---")
 
@@ -308,20 +330,18 @@ if st.session_state.pagina == "formulario":
 
         # ─── CONTAMINACIÓN ────────────────────────────────────────────────
         st.markdown("### ⚠️ Contaminación de Exhibidores")
-        cont = {
-            "CONT_LEGOS_GC": "LEGOS G&C",
-            "CONT_TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
-            "CONT_EXHIB_KIWI": "EXHIB KIWI"
-        }
         cols_cont = st.columns(3)
-        cont_vals = {}
-        for i, (key, label) in enumerate(cont.items()):
-            with cols_cont[i]:
-                cont_vals[key] = st.checkbox(label, key=f"c_{key}")
-        causa_contaminacion = st.text_input(
-            "Identifique las causas de contaminación (si aplica)",
-            placeholder="Ej: Productos Gloria en exhibidor Legos..."
-        )
+        with cols_cont[0]:
+            cont_legos = st.radio("LEGOS G&C", options=["No", "Sí"], horizontal=True, key="cr_legos")
+        with cols_cont[1]:
+            cont_tobogan = st.radio("TOBOGÁN (Ritz/Oreo)", options=["No", "Sí"], horizontal=True, key="cr_tobogan")
+        with cols_cont[2]:
+            cont_kiwi = st.radio("EXHIB KIWI", options=["No", "Sí"], horizontal=True, key="cr_kiwi")
+        cont_vals = {
+            "CONT_LEGOS_GC": 1 if cont_legos == "Sí" else 0,
+            "CONT_TOBOGAN_RITZ_OREO": 1 if cont_tobogan == "Sí" else 0,
+            "CONT_EXHIB_KIWI": 1 if cont_kiwi == "Sí" else 0,
+        }
 
         st.markdown("---")
 
@@ -356,11 +376,11 @@ if st.session_state.pagina == "formulario":
         with col_terc2:
             t1, t2, t3, t4 = st.columns(4)
             with t1:
-                marca_tercero_1 = st.text_input("Marca 1", placeholder="Ej: Gloria", key="mt1")
+                marca_tercero_1 = st.text_input("Marca 1", placeholder="Ej: Alicorp", key="mt1")
             with t2:
-                marca_tercero_2 = st.text_input("Marca 2", placeholder="Ej: Alicorp", key="mt2")
+                marca_tercero_2 = st.text_input("Marca 2", placeholder="Ej: Molitalia", key="mt2")
             with t3:
-                marca_tercero_3 = st.text_input("Marca 3", placeholder="Ej: Laive", key="mt3")
+                marca_tercero_3 = st.text_input("Marca 3", placeholder="Ej: Costa", key="mt3")
             with t4:
                 marca_tercero_4 = st.text_input("Marca 4", placeholder="Ej: Nestlé", key="mt4")
         marca_tercero = ", ".join([m for m in [marca_tercero_1, marca_tercero_2, marca_tercero_3, marca_tercero_4] if m.strip()])
@@ -378,6 +398,17 @@ if st.session_state.pagina == "formulario":
             tiempo_pdc = st.number_input(
                 "Tiempo en PDC (minutos)", min_value=0, step=1, value=0
             )
+
+        st.markdown("---")
+
+        # ─── DETALLES IG ──────────────────────────────────────────────────
+        st.markdown("### 📝 Detalles IG")
+        detalles_ig = st.text_area(
+            "Detalles IG",
+            placeholder="Ingresa los detalles IG de la visita...",
+            height=100,
+            label_visibility="collapsed"
+        )
 
         st.markdown("---")
 
@@ -481,20 +512,128 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
-    # ── FILTRO DE FECHAS ──────────────────────────────────────────────────
-    st.markdown("#### 📅 Rango de fechas")
+    # ── FILTROS + HISTORIAL ───────────────────────────────────────────────
+    st.markdown("#### 📅 Filtros y datos históricos")
+
+    tab_actual, tab_historial = st.tabs(["📊 Datos actuales", "🗂️ Historial guardado"])
+
+    with tab_actual:
+        fecha_min = df["Fecha"].min().date()
+        fecha_max = df["Fecha"].max().date()
+
+        col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
+        with col_f1:
+            fecha_desde = st.date_input("Desde", value=fecha_min, min_value=fecha_min, max_value=fecha_max, key="fd")
+        with col_f2:
+            fecha_hasta = st.date_input("Hasta", value=fecha_max, min_value=fecha_min, max_value=fecha_max, key="fh")
+        with col_f3:
+            vendedores_disponibles = ["Todos"] + sorted(df["Vendedor"].dropna().unique().tolist())
+            filtro_vendedor = st.selectbox("Filtrar por Vendedor", vendedores_disponibles)
+
+        # ── GUARDAR SNAPSHOT ──────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("##### 💾 Guardar este período como histórico")
+        sc1, sc2 = st.columns([3, 1])
+        with sc1:
+            nombre_snap = st.text_input(
+                "Nombre del período",
+                placeholder=f"Ej: Semana del {fecha_desde} al {fecha_hasta}",
+                key="snap_nombre",
+                label_visibility="collapsed"
+            )
+        with sc2:
+            if st.button("💾 Guardar período", use_container_width=True, key="btn_guardar_snap"):
+                mask_snap = (df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)
+                df_snap = df[mask_snap].copy()
+                if filtro_vendedor != "Todos":
+                    df_snap = df_snap[df_snap["Vendedor"] == filtro_vendedor]
+                if df_snap.empty:
+                    st.warning("No hay datos en este rango para guardar.")
+                else:
+                    snap_key = nombre_snap.strip() if nombre_snap.strip() else f"{fecha_desde} → {fecha_hasta}"
+                    if filtro_vendedor != "Todos":
+                        snap_key += f" ({filtro_vendedor})"
+                    st.session_state.snapshots[snap_key] = df_snap.to_csv(index=False)
+                    guardar_snapshots_disco()
+                    st.success(f"✅ Guardado como: **{snap_key}** ({len(df_snap)} registros)")
+
+    with tab_historial:
+        if not st.session_state.snapshots:
+            st.info("Aún no hay períodos guardados. Ve a **Datos actuales**, filtra por fechas y haz clic en **Guardar período**.")
+        else:
+            snap_names = list(st.session_state.snapshots.keys())
+            snap_sel = st.selectbox("Selecciona un período guardado:", snap_names, key="snap_sel")
+
+            hcol1, hcol2 = st.columns([1, 1])
+            with hcol1:
+                if st.button("📂 Ver este período", use_container_width=True, key="btn_ver_snap"):
+                    st.session_state["snap_activo"] = snap_sel
+            with hcol2:
+                st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
+                if st.button("🗑 Eliminar este período", use_container_width=True, key="btn_del_snap"):
+                    del st.session_state.snapshots[snap_sel]
+                    if st.session_state.get("snap_activo") == snap_sel:
+                        del st.session_state["snap_activo"]
+                    guardar_snapshots_disco()
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # Mostrar snapshot activo
+            if st.session_state.get("snap_activo") and st.session_state["snap_activo"] in st.session_state.snapshots:
+                snap_activo = st.session_state["snap_activo"]
+                df_snap_view = pd.read_csv(io.StringIO(st.session_state.snapshots[snap_activo]))
+                df_snap_view["Fecha"] = pd.to_datetime(df_snap_view["Fecha"])
+
+                st.success(f"📂 Mostrando: **{snap_activo}** — {len(df_snap_view)} registros")
+
+                # KPIs del snapshot
+                for col2 in ["Efectividad_Soles", "Tiempo_PDC"]:
+                    if col2 in df_snap_view.columns:
+                        df_snap_view[col2] = pd.to_numeric(df_snap_view[col2], errors="coerce").fillna(0)
+
+                sv1, sv2, sv3, sv4 = st.columns(4)
+                snap_ventas = df_snap_view["Efectividad_Soles"].sum() if "Efectividad_Soles" in df_snap_view.columns else 0
+                snap_visitas = len(df_snap_view)
+                snap_tiempo = df_snap_view["Tiempo_PDC"].mean() if "Tiempo_PDC" in df_snap_view.columns else 0
+                snap_terceros = (df_snap_view["Colocacion_Terceros"] == "Sí").mean() * 100 if "Colocacion_Terceros" in df_snap_view.columns else 0
+                for col_s, lbl, val, sub in [
+                    (sv1, "Visitas", str(snap_visitas), "registros"),
+                    (sv2, "Efectividad", f"S/ {snap_ventas:,.2f}", "total ventas"),
+                    (sv3, "Tiempo Prom.", f"{snap_tiempo:.0f} min", "por visita"),
+                    (sv4, "Con Terceros", f"{snap_terceros:.0f}%", "de visitas"),
+                ]:
+                    with col_s:
+                        st.markdown(f"""<div class="kpi-box"><div class="kpi-label">{lbl}</div>
+                            <div class="kpi-value">{val}</div><div class="kpi-sub">{sub}</div></div>""",
+                            unsafe_allow_html=True)
+
+                st.markdown("")
+                # Tabla del snapshot
+                cols_snap = [c for c in ["Fecha","Codigo_PDC","Nombre_Cliente","Giro_Negocio",
+                    "Vendedor","Zona","Efectividad_Soles","Tiempo_PDC","Colocacion_Terceros","Marca_Tercero"]
+                    if c in df_snap_view.columns]
+                st.dataframe(df_snap_view[cols_snap].sort_values("Fecha", ascending=False), use_container_width=True, hide_index=True)
+
+                # Descargar snapshot como Excel
+                snap_buf = io.BytesIO()
+                with pd.ExcelWriter(snap_buf, engine="openpyxl") as writer:
+                    df_snap_view.drop(columns=["Imagen_Path", "Concreto", "Fecha_str"], errors="ignore").to_excel(
+                        writer, index=False, sheet_name="Historico"
+                    )
+                snap_buf.seek(0)
+                st.download_button(
+                    label=f"⬇️ Descargar Excel — {snap_activo}",
+                    data=snap_buf,
+                    file_name=f"historico_{snap_activo.replace(' ','_').replace('→','a')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+    st.markdown("---")
+
+    # Aplicar filtros para el resto del dashboard (datos actuales)
     fecha_min = df["Fecha"].min().date()
     fecha_max = df["Fecha"].max().date()
-
-    col_f1, col_f2, col_f3 = st.columns([2, 2, 3])
-    with col_f1:
-        fecha_desde = st.date_input("Desde", value=fecha_min, min_value=fecha_min, max_value=fecha_max, key="fd")
-    with col_f2:
-        fecha_hasta = st.date_input("Hasta", value=fecha_max, min_value=fecha_min, max_value=fecha_max, key="fh")
-    with col_f3:
-        vendedores_disponibles = ["Todos"] + sorted(df["Vendedor"].dropna().unique().tolist())
-        filtro_vendedor = st.selectbox("Filtrar por Vendedor", vendedores_disponibles)
-
     mask = (df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)
     df_f = df[mask].copy()
     if filtro_vendedor != "Todos":
