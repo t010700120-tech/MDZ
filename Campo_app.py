@@ -37,7 +37,6 @@ CSV_FILE = "visitas.csv"
 IMG_FOLDER = "imagenes_visita"
 os.makedirs(IMG_FOLDER, exist_ok=True)
 
-# Ticket_Promedio se elimina del formulario; se calcula en el dashboard
 COLUMNAS = [
     "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
     "Vendedor", "Codigo_Vendedor", "Mesa", "Zona", "Latitud", "Longitud",
@@ -66,11 +65,11 @@ def guardar_registro(registro):
 def eliminar_historial():
     if os.path.exists(CSV_FILE):
         os.remove(CSV_FILE)
-    # También eliminar imágenes si existen
     if os.path.exists(IMG_FOLDER):
         for f in os.listdir(IMG_FOLDER):
             os.remove(os.path.join(IMG_FOLDER, f))
 
+# ── Session state defaults ─────────────────────────────────────────────────
 if "pagina" not in st.session_state:
     st.session_state.pagina = "formulario"
 if "confirmar_eliminar" not in st.session_state:
@@ -98,9 +97,9 @@ if st.session_state.pagina == "formulario":
 
     # ─── UBICACIÓN DEL PDC ────────────────────────────────────────────────
     import requests as _req
+
     st.markdown("### 📍 Ubicación del PDC")
 
-    # ── Si ya hay coords guardadas ─────────────────────────────────────────
     if st.session_state.gps_lat and st.session_state.gps_lon:
         st.success(f"✅ Ubicación guardada: **{st.session_state.gps_lat}, {st.session_state.gps_lon}**")
         if st.button("Cambiar ubicación"):
@@ -110,7 +109,7 @@ if st.session_state.pagina == "formulario":
                 del st.session_state["geo_resultados"]
             st.rerun()
     else:
-        # ── Buscar por dirección (siempre disponible) ─────────────────────
+        # ── Buscar por dirección ──────────────────────────────────────────
         st.caption("Busca la dirección del PDC:")
         col_dir1, col_dir2 = st.columns([4, 1])
         with col_dir1:
@@ -124,21 +123,68 @@ if st.session_state.pagina == "formulario":
             buscar = st.button("Buscar", use_container_width=True, key="btn_buscar_dir")
 
         if buscar and dir_input.strip():
+            # Limpiar resultados anteriores
+            if "geo_resultados" in st.session_state:
+                del st.session_state["geo_resultados"]
+
             try:
                 r = _req.get(
                     "https://nominatim.openstreetmap.org/search",
-                    params={"q": dir_input.strip(), "format": "json", "limit": 5, "countrycodes": "pe"},
+                    params={
+                        "q": dir_input.strip(),
+                        "format": "json",
+                        "limit": 5,
+                        "countrycodes": "pe"
+                    },
                     headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
                     timeout=8
                 )
-                res = r.json()
-                if res:
-                    st.session_state["geo_resultados"] = res
-                else:
-                    st.warning("Sin resultados. Prueba con más detalle, ej: 'Av. España 123, Trujillo, La Libertad, Peru'")
-            except Exception as ex:
-                st.error(f"Error de conexión: {ex}")
 
+                # ── CORRECCIÓN PRINCIPAL: validar respuesta antes de parsear ──
+                if r.status_code != 200:
+                    st.error(
+                        f"El servicio de búsqueda devolvió un error (código {r.status_code}). "
+                        "Intenta ingresando las coordenadas manualmente."
+                    )
+                elif not r.text.strip():
+                    st.warning(
+                        "El servicio de búsqueda no respondió. "
+                        "Intenta ingresando las coordenadas manualmente."
+                    )
+                else:
+                    try:
+                        res = r.json()
+                        if res:
+                            st.session_state["geo_resultados"] = res
+                        else:
+                            st.warning(
+                                "Sin resultados para esa dirección. "
+                                "Prueba con más detalle, ej: "
+                                "'Av. España 123, Trujillo, La Libertad, Peru'"
+                            )
+                    except ValueError:
+                        st.error(
+                            "La respuesta del servicio de búsqueda no es válida. "
+                            "Intenta ingresando las coordenadas manualmente."
+                        )
+
+            except _req.exceptions.Timeout:
+                st.error(
+                    "La búsqueda tardó demasiado (timeout). "
+                    "Verifica tu conexión o ingresa las coordenadas manualmente."
+                )
+            except _req.exceptions.ConnectionError:
+                st.error(
+                    "No se pudo conectar al servicio de búsqueda. "
+                    "Ingresa las coordenadas manualmente."
+                )
+            except Exception as ex:
+                st.error(
+                    f"Error inesperado al buscar la dirección: {ex}. "
+                    "Intenta ingresando las coordenadas manualmente."
+                )
+
+        # ── Mostrar resultados si existen ─────────────────────────────────
         if st.session_state.get("geo_resultados"):
             res = st.session_state["geo_resultados"]
             opts = {r["display_name"][:90]: (r["lat"], r["lon"]) for r in res}
@@ -150,7 +196,7 @@ if st.session_state.pagina == "formulario":
                 del st.session_state["geo_resultados"]
                 st.rerun()
 
-        # ── OPCIÓN 3: Coordenadas manuales ─────────────────────────────────
+        # ── Coordenadas manuales ──────────────────────────────────────────
         with st.expander("Ingresar coordenadas manualmente"):
             cm1, cm2, cm3 = st.columns([2, 2, 1])
             with cm1:
@@ -161,15 +207,20 @@ if st.session_state.pagina == "formulario":
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("Guardar", key="btn_manual"):
                     if lat_m and lon_m:
-                        st.session_state.gps_lat = lat_m.strip()
-                        st.session_state.gps_lon = lon_m.strip()
-                        st.rerun()
+                        try:
+                            float(lat_m.strip())
+                            float(lon_m.strip())
+                            st.session_state.gps_lat = lat_m.strip()
+                            st.session_state.gps_lon = lon_m.strip()
+                            st.rerun()
+                        except ValueError:
+                            st.error("Latitud y Longitud deben ser números. Ej: -8.111640")
 
     st.markdown("---")
 
     with st.form("form_visita", clear_on_submit=False):
 
-        # ─── SECCIÓN: DATOS DEL CLIENTE ───────────────────────────────────
+        # ─── DATOS DEL CLIENTE ────────────────────────────────────────────
         st.markdown("### 🏪 Datos del Cliente")
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -192,13 +243,12 @@ if st.session_state.pagina == "formulario":
         with col5:
             zona = st.text_input("Zona", placeholder="Ej: Norte, Centro, Sur...")
 
-        # coords desde session_state (capturadas por búsqueda de dirección)
         latitud  = st.session_state.gps_lat
         longitud = st.session_state.gps_lon
 
         st.markdown("---")
 
-        # ─── SECCIÓN: DATOS DEL VENDEDOR ──────────────────────────────────
+        # ─── DATOS DEL VENDEDOR ───────────────────────────────────────────
         st.markdown("### 🧑‍💼 Datos del Vendedor")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
@@ -317,7 +367,7 @@ if st.session_state.pagina == "formulario":
 
         st.markdown("---")
 
-        # ─── KPIs NUMÉRICOS (sin Ticket Promedio) ─────────────────────────
+        # ─── KPIs NUMÉRICOS ───────────────────────────────────────────────
         st.markdown("### 📊 Indicadores de la visita")
         k1, k2 = st.columns(2)
         with k1:
@@ -387,7 +437,6 @@ elif st.session_state.pagina == "dashboard":
 
     df = cargar_datos()
 
-    # ── BARRA SUPERIOR ────────────────────────────────────────────────────
     col_title, col_btn1, col_btn2, col_btn3 = st.columns([4, 1, 1, 1])
     with col_title:
         st.markdown("# Dashboard — Supervisión Canal Tradicional")
@@ -400,7 +449,6 @@ elif st.session_state.pagina == "dashboard":
             st.session_state.pagina = "formulario"
             st.rerun()
     with col_btn3:
-        # Botón de eliminar historial con confirmación
         if not st.session_state.confirmar_eliminar:
             st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
             if st.button("🗑 Eliminar historial"):
@@ -447,7 +495,6 @@ elif st.session_state.pagina == "dashboard":
         vendedores_disponibles = ["Todos"] + sorted(df["Vendedor"].dropna().unique().tolist())
         filtro_vendedor = st.selectbox("Filtrar por Vendedor", vendedores_disponibles)
 
-    # Aplicar filtros
     mask = (df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)
     df_f = df[mask].copy()
     if filtro_vendedor != "Todos":
@@ -458,7 +505,6 @@ elif st.session_state.pagina == "dashboard":
         st.stop()
 
     # ── TICKET PROMEDIO CALCULADO ─────────────────────────────────────────
-    # Por vendedor y fecha: ventas totales del vendedor ÷ clientes únicos visitados ese día
     df_f["Fecha_str"] = df_f["Fecha"].dt.date.astype(str)
     ticket_calc = (
         df_f.groupby(["Vendedor", "Fecha_str"])
@@ -495,7 +541,7 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
-    # ── TICKET PROMEDIO POR VENDEDOR (tabla detallada) ────────────────────
+    # ── TICKET PROMEDIO POR VENDEDOR ──────────────────────────────────────
     st.markdown("#### 📈 Ticket Promedio por Vendedor y Día")
     st.caption("Ventas totales del vendedor ÷ clientes únicos visitados ese día")
     ticket_display = ticket_calc.rename(columns={
@@ -511,7 +557,7 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
-    # ── FILA 1: Colocación Exhibidores + Giros de Negocio + Colocación Terceros ──
+    # ── FILA 1: Colocación Exhibidores + Giros + Terceros ─────────────────
     col_g1, col_g2, col_g3 = st.columns(3)
 
     with col_g1:
@@ -626,22 +672,16 @@ elif st.session_state.pagina == "dashboard":
             df_map["Longitud"] = pd.to_numeric(df_map["Longitud"], errors="coerce")
             df_map = df_map.dropna(subset=["Latitud", "Longitud"])
             if not df_map.empty:
-                import json
-
-                # Colores por zona
                 zonas_unicas = df_map["Zona"].dropna().unique().tolist() if "Zona" in df_map.columns else []
                 palette = ["#4472C4","#e05252","#6a9e4f","#FF7F0E","#7b5ea7","#FFBF00","#2196F3","#00BCD4"]
                 zona_color = {z: palette[i % len(palette)] for i, z in enumerate(zonas_unicas)}
                 df_map["_color"] = df_map["Zona"].map(zona_color).fillna("#888888")
-                df_map["_size"] = 12
 
                 fig_map = go.Figure()
 
-                # Capa de sombreado por zona (convex hull aproximado con scatter grande)
                 for zona, grp in df_map.groupby("Zona"):
                     if len(grp) >= 1:
                         color_hex = zona_color.get(zona, "#888888")
-                        # Convertir hex a rgba
                         r = int(color_hex[1:3], 16)
                         g = int(color_hex[3:5], 16)
                         b = int(color_hex[5:7], 16)
@@ -655,7 +695,6 @@ elif st.session_state.pagina == "dashboard":
                             name=f"_sombra_{zona}"
                         ))
 
-                # Puntos principales por zona
                 for zona, grp in df_map.groupby("Zona"):
                     color_hex = zona_color.get(zona, "#888888")
                     giro_col = grp["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
@@ -679,7 +718,6 @@ elif st.session_state.pagina == "dashboard":
                         )
                     ))
 
-                # Zoom automático al centro de todos los puntos
                 lat_c = df_map["Latitud"].mean()
                 lon_c = df_map["Longitud"].mean()
                 lat_rng = df_map["Latitud"].max() - df_map["Latitud"].min()
@@ -760,14 +798,15 @@ elif st.session_state.pagina == "dashboard":
     with dcol1:
         buffer = io.BytesIO()
         export_df = df_f.copy()
-        # Añadir ticket calculado al export
         export_df = export_df.merge(
             ticket_calc[["Vendedor", "Fecha_str", "Ticket_Calculado"]],
             left_on=["Vendedor", "Fecha_str"], right_on=["Vendedor", "Fecha_str"], how="left"
         )
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            export_df.drop(columns=["Imagen_Path", "Fecha_str", "Concreto", "Giro_Corto"],
-                           errors="ignore").to_excel(writer, index=False, sheet_name="Visitas")
+            export_df.drop(
+                columns=["Imagen_Path", "Fecha_str", "Concreto"],
+                errors="ignore"
+            ).to_excel(writer, index=False, sheet_name="Visitas")
         buffer.seek(0)
         st.download_button(
             label="⬇️ Descargar Excel",
