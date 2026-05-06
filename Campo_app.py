@@ -44,7 +44,7 @@ COLUMNAS = [
     "OREO_FRESA_PACK", "OREO_FRESA_ROLLO",
     "OREO_CHOCO_LIMON_PACK", "OREO_CHOCO_LIMON_ROLLO",
     "CLUB_SOCIAL_SAB",
-    "OREO_CLASICA_ROLLO", "ROLLO_OREO", "ROLLO_GOLDEN", "ROLLO_CHOCOLATE",
+    "OREO_CLASICA_ROLLO", "ROLLO_GOLDEN", "ROLLO_CHOCOLATE",
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S", "BUBBALOO",
     "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI", "RITRAZ", "MEGA_KIWI",
     "EXHIBIDOR_OTROS", "EXHIBIDOR_OTROS_DESC",
@@ -249,7 +249,7 @@ if st.session_state.pagina == "formulario":
         longitud = st.session_state.gps_lon
 
         st.markdown("---")
-        st.markdown("### 🧑‍💼 Datos del Vendedor")
+        st.markdown("### 🧑‍💼 Ruta")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1: vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
         with col_v2: codigo_vendedor = st.text_input("Código de Vendedor", max_chars=8, placeholder="Ej: VEN00001")
@@ -279,7 +279,6 @@ if st.session_state.pagina == "formulario":
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
             "OREO_CLASICA_ROLLO":     "OREO CLÁSICA (Rollo)",
-            "ROLLO_OREO":             "ROLLO OREO",
             "ROLLO_GOLDEN":           "OREO GOLDEN (Rollo)",
             "ROLLO_CHOCOLATE":        "OREO CHOCOLATE (Rollo)",
         }
@@ -814,7 +813,6 @@ elif st.session_state.pagina == "dashboard":
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
             "OREO_CLASICA_ROLLO":     "OREO CLÁSICA (Rollo)",
-            "ROLLO_OREO":             "ROLLO OREO",
             "ROLLO_GOLDEN":           "OREO GOLDEN (Rollo)",
             "ROLLO_CHOCOLATE":        "OREO CHOCOLATE (Rollo)",
         }, df_f, total_visitas)
