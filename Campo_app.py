@@ -42,8 +42,10 @@ COLUMNAS = [
     "Vendedor", "Codigo_Vendedor", "Mesa", "Zona", "Latitud", "Longitud",
     "OREO_34GR", "OREO_54GR", "OREO_ROLLO", "RITZ_ROLLO", "RITZ_TACO",
     "FIELD_CC", "FIELD_DP", "FIELD_VAIN", "CLUB_SOCIAL_TRA",
-    "OREO_FRESA_TACO", "OREO_FRESA_ROLLO", "CLUB_SOCIAL_SAB",
-    "ROLLO_OREO", "ROLLO_VAINILLA", "ROLLO_CHOCOLATE",
+    "OREO_FRESA_TACO", "OREO_FRESA_ROLLO",
+    "OREO_CHOCO_LIMON_TACO", "OREO_CHOCO_LIMON_ROLLO",
+    "CLUB_SOCIAL_SAB",
+    "ROLLO_OREO", "ROLLO_OREO_CHOCO_LIMON", "ROLLO_VAINILLA", "ROLLO_CHOCOLATE",
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S", "BUBBALOO",
     "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI", "RITRAZ", "MEGA_KIWI",
     "EXHIBIDOR_OTROS", "EXHIBIDOR_OTROS_DESC",
@@ -206,7 +208,6 @@ if st.session_state.pagina == "formulario":
                 "5 - Otros (Puesto de mercado, Centros Educativos...)"
             ])
         with col5:
-            # ZONA: texto libre
             zona = st.text_input("Zona", placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO, CALIFORNIA...")
 
         latitud  = st.session_state.gps_lat
@@ -224,7 +225,7 @@ if st.session_state.pagina == "formulario":
 
         st.markdown("---")
 
-        # PRESENCIA BISCUITS (sin Club Social Sabores)
+        # PRESENCIA BISCUITS
         st.markdown("### 🍪 Presencia Biscuits")
         biscuits = {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
@@ -240,15 +241,18 @@ if st.session_state.pagina == "formulario":
 
         st.markdown("---")
 
-        # PRODUCTOS FOCO (nueva sección)
+        # PRODUCTOS FOCO
         st.markdown("### ⭐ Productos Foco")
         productos_foco = {
-            "OREO_FRESA_TACO":   "OREO FRESA (Taco)",
-            "OREO_FRESA_ROLLO":  "OREO FRESA (Rollo)",
-            "CLUB_SOCIAL_SAB":   "CLUB SOCIAL (Sabores)",
-            "ROLLO_OREO":        "ROLLO OREO",
-            "ROLLO_VAINILLA":    "ROLLO VAINILLA",
-            "ROLLO_CHOCOLATE":   "ROLLO CHOCOLATE",
+            "OREO_FRESA_TACO":        "OREO FRESA (Taco)",
+            "OREO_FRESA_ROLLO":       "OREO FRESA (Rollo)",
+            "OREO_CHOCO_LIMON_TACO":  "OREO CHOCO LIMÓN (Taco)",
+            "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
+            "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
+            "ROLLO_OREO":             "ROLLO OREO",
+            "ROLLO_OREO_CHOCO_LIMON": "ROLLO OREO CHOCO LIMÓN",
+            "ROLLO_VAINILLA":         "ROLLO VAINILLA",
+            "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
         }
         cols_pf = st.columns(3)
         pf_vals = {}
@@ -258,7 +262,7 @@ if st.session_state.pagina == "formulario":
 
         st.markdown("---")
 
-        # PRESENCIA G&C (con Bubbaloo)
+        # PRESENCIA G&C
         st.markdown("### 🍬 Presencia G&C")
         gyc = {
             "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
@@ -273,7 +277,7 @@ if st.session_state.pagina == "formulario":
 
         st.markdown("---")
 
-        # TIPOS DE EXHIBIDORES (con Ritraz, Mega Kiwi y Otros + texto)
+        # TIPOS DE EXHIBIDORES
         st.markdown("### 🗂️ Tipos de Exhibidores")
         tipos = {
             "LEGOS_GC": "LEGOS G&C", "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -578,12 +582,7 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
-    # COLORES FIJOS por giro
-    GIRO_COLORS = {
-        "BODEGA": "#4CAF50", "MINIMARKET / TIENDAS": "#FF5722",
-        "KIOSKO": "#9E9E9E", "ESPECIALIZADOS (PANIFICADORA, HORECA, INTERNET...)": "#FFC107",
-        "OTROS (PUESTO DE MERCADO, CENTROS EDUCATIVOS...)": "#2196F3"
-    }
+    # COLORES FIJOS
     PALETTE_PIE = ["#4CAF50","#FF5722","#9E9E9E","#FFC107","#2196F3","#9C27B0","#00BCD4"]
 
     col_g1, col_g2, col_g3 = st.columns(3)
@@ -683,6 +682,66 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
+    # ═══════════════════════════════════════════
+    # GRÁFICA DE VISIBILIDAD
+    # ═══════════════════════════════════════════
+    st.markdown("#### 👁️ Visibilidad por Exhibidor")
+    st.caption("Cantidad de visitas por nivel de visibilidad en cada exhibidor")
+
+    vis_data = []
+    for col_v, label_v in [
+        ("Visibilidad_Legos",   "LEGOS G&C"),
+        ("Visibilidad_Tobogan", "TOBOGÁN (Ritz/Oreo)"),
+        ("Visibilidad_Kiwi",    "EXHIB KIWI")
+    ]:
+        if col_v in df_f.columns:
+            serie_v = pd.to_numeric(df_f[col_v], errors="coerce").fillna(0)
+            for nivel, nombre_nivel in [(1, "Alta"), (2, "Media"), (3, "Baja"), (0, "No Tiene")]:
+                cnt_v = int((serie_v == nivel).sum())
+                pct_v = cnt_v / total_visitas * 100 if total_visitas > 0 else 0
+                vis_data.append({
+                    "Exhibidor": label_v,
+                    "Nivel": nombre_nivel,
+                    "Cantidad": cnt_v,
+                    "Pct": round(pct_v, 1)
+                })
+
+    df_vis = pd.DataFrame(vis_data)
+    if not df_vis.empty:
+        df_vis["Etiqueta"] = df_vis.apply(
+            lambda r: f"{r['Cantidad']}  ({r['Pct']}%)" if r["Cantidad"] > 0 else "", axis=1
+        )
+        VIS_COLOR_MAP = {
+            "Alta":     "#4CAF50",
+            "Media":    "#FFC107",
+            "Baja":     "#e05252",
+            "No Tiene": "#b0b0b0"
+        }
+        fig_vis = px.bar(
+            df_vis,
+            x="Exhibidor",
+            y="Cantidad",
+            color="Nivel",
+            text="Etiqueta",
+            barmode="group",
+            color_discrete_map=VIS_COLOR_MAP,
+            category_orders={"Nivel": ["Alta", "Media", "Baja", "No Tiene"]}
+        )
+        fig_vis.update_traces(textposition="outside")
+        fig_vis.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font_family="DM Sans",
+            margin=dict(t=20, b=20),
+            xaxis_title="",
+            yaxis_title="Cantidad de visitas",
+            legend_title_text="Visibilidad",
+            legend=dict(orientation="h", y=-0.2)
+        )
+        st.plotly_chart(fig_vis, use_container_width=True)
+
+    st.markdown("---")
+
     col_g4, col_g5 = st.columns(2)
 
     with col_g4:
@@ -772,9 +831,15 @@ elif st.session_state.pagina == "dashboard":
         }, df_f, total_visitas)
     with tab_foco:
         render_presencia_bar({
-            "OREO_FRESA_TACO":"OREO FRESA (Taco)","OREO_FRESA_ROLLO":"OREO FRESA (Rollo)",
-            "CLUB_SOCIAL_SAB":"CLUB SOCIAL (Sabores)",
-            "ROLLO_OREO":"ROLLO OREO","ROLLO_VAINILLA":"ROLLO VAINILLA","ROLLO_CHOCOLATE":"ROLLO CHOCOLATE",
+            "OREO_FRESA_TACO":        "OREO FRESA (Taco)",
+            "OREO_FRESA_ROLLO":       "OREO FRESA (Rollo)",
+            "OREO_CHOCO_LIMON_TACO":  "OREO CHOCO LIMÓN (Taco)",
+            "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
+            "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
+            "ROLLO_OREO":             "ROLLO OREO",
+            "ROLLO_OREO_CHOCO_LIMON": "ROLLO OREO CHOCO LIMÓN",
+            "ROLLO_VAINILLA":         "ROLLO VAINILLA",
+            "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
         }, df_f, total_visitas)
     with tab_gyc:
         render_presencia_bar({
