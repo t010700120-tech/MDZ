@@ -45,7 +45,7 @@ COLUMNAS = [
     "OREO_FRESA_TACO", "OREO_FRESA_ROLLO",
     "OREO_CHOCO_LIMON_TACO", "OREO_CHOCO_LIMON_ROLLO",
     "CLUB_SOCIAL_SAB",
-    "ROLLO_OREO", "ROLLO_OREO_CHOCO_LIMON", "ROLLO_VAINILLA", "ROLLO_CHOCOLATE",
+    "ROLLO_OREO", "ROLLO_VAINILLA", "ROLLO_CHOCOLATE",
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S", "BUBBALOO",
     "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI", "RITRAZ", "MEGA_KIWI",
     "EXHIBIDOR_OTROS", "EXHIBIDOR_OTROS_DESC",
@@ -250,7 +250,6 @@ if st.session_state.pagina == "formulario":
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
             "ROLLO_OREO":             "ROLLO OREO",
-            "ROLLO_OREO_CHOCO_LIMON": "ROLLO OREO CHOCO LIMÓN",
             "ROLLO_VAINILLA":         "ROLLO VAINILLA",
             "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
         }
@@ -837,7 +836,6 @@ elif st.session_state.pagina == "dashboard":
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
             "ROLLO_OREO":             "ROLLO OREO",
-            "ROLLO_OREO_CHOCO_LIMON": "ROLLO OREO CHOCO LIMÓN",
             "ROLLO_VAINILLA":         "ROLLO VAINILLA",
             "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
         }, df_f, total_visitas)
