@@ -143,35 +143,53 @@ if st.session_state.pagina == "formulario":
             if "geo_resultados" in st.session_state:
                 del st.session_state["geo_resultados"]
             try:
-                r = _req.get("https://nominatim.openstreetmap.org/search",
-                    params={"q": dir_input.strip(), "format": "json", "limit": 5, "countrycodes": "pe"},
-                    headers={"User-Agent": "MDZ-SupervisionApp/1.0"}, timeout=8)
+                import time
+                time.sleep(0.5)
+                r = _req.get(
+                    "https://photon.komoot.io/api/",
+                    params={"q": dir_input.strip() + " Peru", "limit": 5, "lang": "es"},
+                    headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                    timeout=10
+                )
                 if r.status_code != 200:
                     st.error(f"Error {r.status_code}. Ingresa coordenadas manualmente.")
                 elif not r.text.strip():
                     st.warning("Sin respuesta. Ingresa coordenadas manualmente.")
                 else:
                     try:
-                        res = r.json()
-                        if res:
-                            st.session_state["geo_resultados"] = res
+                        features = r.json().get("features", [])
+                        if features:
+                            st.session_state["geo_resultados"] = features
                         else:
-                            st.warning("Sin resultados. Prueba con más detalle.")
+                            st.warning("Sin resultados. Prueba con más detalle o ingresa coordenadas manualmente.")
                     except ValueError:
                         st.error("Respuesta inválida. Ingresa coordenadas manualmente.")
             except Exception as ex:
-                st.error(f"Error: {ex}. Ingresa coordenadas manualmente.")
+                st.error(f"Error de conexión: {ex}. Ingresa coordenadas manualmente.")
 
         if st.session_state.get("geo_resultados"):
-            res = st.session_state["geo_resultados"]
-            opts = {r["display_name"][:90]: (r["lat"], r["lon"]) for r in res}
-            elegida = st.selectbox("Selecciona la ubicación:", list(opts.keys()), key="geo_sel")
-            if st.button("Confirmar esta ubicación", key="geo_ok"):
-                la, lo = opts[elegida]
-                st.session_state.gps_lat = str(round(float(la), 6))
-                st.session_state.gps_lon = str(round(float(lo), 6))
-                del st.session_state["geo_resultados"]
-                st.rerun()
+            features = st.session_state["geo_resultados"]
+            opts = {}
+            for f in features:
+                props = f.get("properties", {})
+                coords = f.get("geometry", {}).get("coordinates", [None, None])
+                lon_f, lat_f = coords[0], coords[1]
+                nombre = props.get("name", "")
+                calle  = props.get("street", "")
+                ciudad = props.get("city", props.get("town", props.get("village", "")))
+                estado = props.get("state", "")
+                partes = [p for p in [nombre, calle, ciudad, estado, "Perú"] if p]
+                etiqueta = ", ".join(partes)[:100] + f"  ({round(float(lat_f),5)}, {round(float(lon_f),5)})"
+                if lat_f and lon_f:
+                    opts[etiqueta] = (lat_f, lon_f)
+            if opts:
+                elegida = st.selectbox("Selecciona la ubicación:", list(opts.keys()), key="geo_sel")
+                if st.button("Confirmar esta ubicación", key="geo_ok"):
+                    la, lo = opts[elegida]
+                    st.session_state.gps_lat = str(round(float(la), 6))
+                    st.session_state.gps_lon = str(round(float(lo), 6))
+                    del st.session_state["geo_resultados"]
+                    st.rerun()
 
         with st.expander("Ingresar coordenadas manualmente"):
             cm1, cm2, cm3 = st.columns([2, 2, 1])
