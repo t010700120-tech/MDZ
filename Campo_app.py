@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from datetime import date
 import os
 import io
-import base64
 import zipfile
 
 st.set_page_config(page_title="SUPERVISIÓN CANAL TRADICIONAL", layout="wide", page_icon=None)
@@ -40,20 +39,19 @@ os.makedirs(IMG_FOLDER, exist_ok=True)
 COLUMNAS = [
     "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
     "Vendedor", "Codigo_Vendedor", "Mesa", "Zona", "Latitud", "Longitud",
-    "OREO_34GR", "OREO_54GR", "OREO_ROLLO", "RITZ_ROLLO", "RITZ_TACO",
+    "OREO_34GR", "OREO_54GR", "OREO_ROLLO", "RITZ_ROLLO", "RITZ_PACK",
     "FIELD_CC", "FIELD_DP", "FIELD_VAIN", "CLUB_SOCIAL_TRA",
-    "OREO_FRESA_TACO", "OREO_FRESA_ROLLO",
-    "OREO_CHOCO_LIMON_TACO", "OREO_CHOCO_LIMON_ROLLO",
+    "OREO_FRESA_PACK", "OREO_FRESA_ROLLO",
+    "OREO_CHOCO_LIMON_PACK", "OREO_CHOCO_LIMON_ROLLO",
     "CLUB_SOCIAL_SAB",
-    "ROLLO_OREO", "ROLLO_VAINILLA", "ROLLO_CHOCOLATE",
+    "OREO_CLASICA_ROLLO", "ROLLO_OREO", "ROLLO_GOLDEN", "ROLLO_CHOCOLATE",
     "TRIDENT_5s", "TRIDENT_EVUP", "HALLS_12s", "HALLS_100s", "CHICLETS_2S", "BUBBALOO",
     "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI", "RITRAZ", "MEGA_KIWI",
     "EXHIBIDOR_OTROS", "EXHIBIDOR_OTROS_DESC",
     "CONT_LEGOS_GC", "CONT_TOBOGAN_RITZ_OREO", "CONT_EXHIB_KIWI", "Causa_Contaminacion",
     "Visibilidad_Legos", "Visibilidad_Tobogan", "Visibilidad_Kiwi",
     "Colocacion_Terceros", "Marca_Tercero",
-    "Efectividad_Soles", "Tiempo_PDC",
-    "Imagen_Path"
+    "Efectividad_Soles", "Tiempo_PDC", "Imagen_Path"
 ]
 
 def cargar_datos():
@@ -74,16 +72,18 @@ def eliminar_historial():
         for f in os.listdir(IMG_FOLDER):
             os.remove(os.path.join(IMG_FOLDER, f))
 
-if "pagina" not in st.session_state:
-    st.session_state.pagina = "formulario"
-if "confirmar_eliminar" not in st.session_state:
-    st.session_state.confirmar_eliminar = False
-if "gps_lat" not in st.session_state:
-    st.session_state.gps_lat = ""
-if "gps_lon" not in st.session_state:
-    st.session_state.gps_lon = ""
-if "snapshots" not in st.session_state:
-    st.session_state.snapshots = {}
+# ── Estado de sesión (inicialización segura) ──────────────────────────────────
+for _k, _v in {
+    "pagina": "formulario",
+    "confirmar_eliminar": False,
+    "gps_lat": "",
+    "gps_lon": "",
+    "snapshots": {},
+    "geo_resultados": [],
+    "buscar_trigger": False,
+}.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
 
 SNAPSHOTS_FILE = "snapshots.pkl"
 
@@ -102,6 +102,60 @@ def cargar_snapshots_disco():
 if not st.session_state.snapshots and os.path.exists(SNAPSHOTS_FILE):
     st.session_state.snapshots = cargar_snapshots_disco()
 
+def buscar_coordenadas(direccion: str):
+    """Intenta Photon primero, luego Nominatim como fallback."""
+    import requests, time
+    resultados = []
+    # --- Photon ---
+    try:
+        time.sleep(0.3)
+        r = requests.get(
+            "https://photon.komoot.io/api/",
+            params={"q": direccion + " Peru", "limit": 5, "lang": "es"},
+            headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            for f in r.json().get("features", []):
+                props  = f.get("properties", {})
+                coords = f.get("geometry", {}).get("coordinates", [None, None])
+                lon_f, lat_f = coords[0], coords[1]
+                if lat_f is None or lon_f is None:
+                    continue
+                nombre = props.get("name", "")
+                calle  = props.get("street", "")
+                ciudad = props.get("city", props.get("town", props.get("village", "")))
+                estado = props.get("state", "")
+                partes = [p for p in [nombre, calle, ciudad, estado, "Perú"] if p]
+                etiqueta = ", ".join(partes)[:100] + f"  ({round(float(lat_f),5)}, {round(float(lon_f),5)})"
+                resultados.append({"label": etiqueta, "lat": float(lat_f), "lon": float(lon_f)})
+    except Exception:
+        pass
+
+    # --- Nominatim como fallback si Photon no dio resultados ---
+    if not resultados:
+        try:
+            time.sleep(1.1)
+            r2 = requests.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": direccion, "format": "json", "limit": 5, "countrycodes": "pe"},
+                headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                timeout=8,
+            )
+            if r2.status_code == 200:
+                for item in r2.json():
+                    etiqueta = item.get("display_name", "")[:100]
+                    resultados.append({
+                        "label": etiqueta,
+                        "lat": float(item["lat"]),
+                        "lon": float(item["lon"]),
+                    })
+        except Exception:
+            pass
+
+    return resultados
+
+
 # ═══════════════════════════════════════════
 # PÁGINA: FORMULARIO
 # ═══════════════════════════════════════════
@@ -117,9 +171,6 @@ if st.session_state.pagina == "formulario":
 
     st.markdown("# Registro de Visita")
     st.markdown("---")
-
-    import requests as _req
-
     st.markdown("### 📍 Ubicación del PDC")
 
     if st.session_state.gps_lat and st.session_state.gps_lon:
@@ -127,73 +178,40 @@ if st.session_state.pagina == "formulario":
         if st.button("Cambiar ubicación"):
             st.session_state.gps_lat = ""
             st.session_state.gps_lon = ""
-            if "geo_resultados" in st.session_state:
-                del st.session_state["geo_resultados"]
+            st.session_state.geo_resultados = []
             st.rerun()
     else:
         st.caption("Busca la dirección del PDC:")
         col_dir1, col_dir2 = st.columns([4, 1])
         with col_dir1:
-            dir_input = st.text_input("Dirección", placeholder="Ej: Av. España 1234, Trujillo, Peru",
-                                      label_visibility="collapsed", key="dir_input")
+            dir_input = st.text_input(
+                "Dirección", placeholder="Ej: Av. España 1234, Trujillo",
+                label_visibility="collapsed", key="dir_input"
+            )
         with col_dir2:
-            buscar = st.button("Buscar", use_container_width=True, key="btn_buscar_dir")
+            if st.button("Buscar", use_container_width=True, key="btn_buscar_dir"):
+                if dir_input.strip():
+                    with st.spinner("Buscando..."):
+                        resultados = buscar_coordenadas(dir_input.strip())
+                    if resultados:
+                        st.session_state.geo_resultados = resultados
+                    else:
+                        st.session_state.geo_resultados = []
+                        st.warning("Sin resultados. Ingresa coordenadas manualmente.")
 
-        if buscar and dir_input.strip():
-            if "geo_resultados" in st.session_state:
-                del st.session_state["geo_resultados"]
-            try:
-                import time
-                time.sleep(0.5)
-                r = _req.get(
-                    "https://photon.komoot.io/api/",
-                    params={"q": dir_input.strip() + " Peru", "limit": 5, "lang": "es"},
-                    headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
-                    timeout=10
-                )
-                if r.status_code != 200:
-                    st.error(f"Error {r.status_code}. Ingresa coordenadas manualmente.")
-                elif not r.text.strip():
-                    st.warning("Sin respuesta. Ingresa coordenadas manualmente.")
-                else:
-                    try:
-                        features = r.json().get("features", [])
-                        if features:
-                            st.session_state["geo_resultados"] = features
-                        else:
-                            st.warning("Sin resultados. Prueba con más detalle o ingresa coordenadas manualmente.")
-                    except ValueError:
-                        st.error("Respuesta inválida. Ingresa coordenadas manualmente.")
-            except Exception as ex:
-                st.error(f"Error de conexión: {ex}. Ingresa coordenadas manualmente.")
-
-        if st.session_state.get("geo_resultados"):
-            features = st.session_state["geo_resultados"]
-            opts = {}
-            for f in features:
-                props = f.get("properties", {})
-                coords = f.get("geometry", {}).get("coordinates", [None, None])
-                lon_f, lat_f = coords[0], coords[1]
-                nombre = props.get("name", "")
-                calle  = props.get("street", "")
-                ciudad = props.get("city", props.get("town", props.get("village", "")))
-                estado = props.get("state", "")
-                partes = [p for p in [nombre, calle, ciudad, estado, "Perú"] if p]
-                etiqueta = ", ".join(partes)[:100] + f"  ({round(float(lat_f),5)}, {round(float(lon_f),5)})"
-                if lat_f and lon_f:
-                    opts[etiqueta] = (lat_f, lon_f)
-            if opts:
-                elegida = st.selectbox("Selecciona la ubicación:", list(opts.keys()), key="geo_sel")
-                if st.button("Confirmar esta ubicación", key="geo_ok"):
-                    la, lo = opts[elegida]
-                    st.session_state.gps_lat = str(round(float(la), 6))
-                    st.session_state.gps_lon = str(round(float(lo), 6))
-                    del st.session_state["geo_resultados"]
-                    st.rerun()
+        if st.session_state.geo_resultados:
+            opciones = {r["label"]: (r["lat"], r["lon"]) for r in st.session_state.geo_resultados}
+            elegida  = st.selectbox("Selecciona la ubicación:", list(opciones.keys()), key="geo_sel")
+            if st.button("Confirmar esta ubicación", key="geo_ok"):
+                la, lo = opciones[elegida]
+                st.session_state.gps_lat = str(round(la, 6))
+                st.session_state.gps_lon = str(round(lo, 6))
+                st.session_state.geo_resultados = []
+                st.rerun()
 
         with st.expander("Ingresar coordenadas manualmente"):
             cm1, cm2, cm3 = st.columns([2, 2, 1])
-            with cm1: lat_m = st.text_input("Latitud", placeholder="-8.111640", key="lat_man")
+            with cm1: lat_m = st.text_input("Latitud",  placeholder="-8.111640",  key="lat_man")
             with cm2: lon_m = st.text_input("Longitud", placeholder="-79.028700", key="lon_man")
             with cm3:
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -211,7 +229,6 @@ if st.session_state.pagina == "formulario":
 
     with st.form("form_visita", clear_on_submit=False):
 
-        # DATOS DEL CLIENTE
         st.markdown("### 🏪 Datos del Cliente")
         col1, col2, col3 = st.columns(3)
         with col1: fecha = st.date_input("Fecha de Visita", value=date.today())
@@ -226,14 +243,12 @@ if st.session_state.pagina == "formulario":
                 "5 - Otros (Puesto de mercado, Centros Educativos...)"
             ])
         with col5:
-            zona = st.text_input("Zona", placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO, CALIFORNIA...")
+            zona = st.text_input("Zona", placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO...")
 
         latitud  = st.session_state.gps_lat
         longitud = st.session_state.gps_lon
 
         st.markdown("---")
-
-        # DATOS DEL VENDEDOR
         st.markdown("### 🧑‍💼 Datos del Vendedor")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1: vendedor = st.text_input("Nombre del Vendedor", placeholder="Nombre del vendedor")
@@ -242,14 +257,12 @@ if st.session_state.pagina == "formulario":
         ruta_logica = st.text_input("Ruta Lógica", placeholder="Ej: Ruta 01 - Norte")
 
         st.markdown("---")
-
-        # PRESENCIA BISCUITS
         st.markdown("### 🍪 Presencia Biscuits")
         biscuits = {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
-            "RITZ_ROLLO": "RITZ ROLLO", "RITZ_TACO": "RITZ TACO",
+            "RITZ_ROLLO": "RITZ ROLLO", "RITZ_PACK": "RITZ PACK",
             "FIELD_CC": "FIELD (CC)", "FIELD_DP": "FIELD (DP)", "FIELD_VAIN": "FIELD (VAIN)",
-            "CLUB_SOCIAL_TRA": "CLUB SOCIAL (TRA)"
+            "CLUB_SOCIAL_TRA": "CLUB SOCIAL (TRA)",
         }
         cols_b = st.columns(5)
         biscuits_vals = {}
@@ -258,18 +271,17 @@ if st.session_state.pagina == "formulario":
                 biscuits_vals[key] = st.checkbox(label, key=f"b_{key}")
 
         st.markdown("---")
-
-        # PRODUCTOS FOCO
         st.markdown("### ⭐ Productos Foco")
         productos_foco = {
-            "OREO_FRESA_TACO":        "OREO FRESA (Taco)",
+            "OREO_FRESA_PACK":        "OREO FRESA (Pack)",
             "OREO_FRESA_ROLLO":       "OREO FRESA (Rollo)",
-            "OREO_CHOCO_LIMON_TACO":  "OREO CHOCO LIMÓN (Taco)",
+            "OREO_CHOCO_LIMON_PACK":  "OREO CHOCO LIMÓN (Pack)",
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
+            "OREO_CLASICA_ROLLO":     "OREO CLÁSICA (Rollo)",
             "ROLLO_OREO":             "ROLLO OREO",
-            "ROLLO_VAINILLA":         "ROLLO VAINILLA",
-            "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
+            "ROLLO_GOLDEN":           "OREO GOLDEN (Rollo)",
+            "ROLLO_CHOCOLATE":        "OREO CHOCOLATE (Rollo)",
         }
         cols_pf = st.columns(3)
         pf_vals = {}
@@ -278,8 +290,6 @@ if st.session_state.pagina == "formulario":
                 pf_vals[key] = st.checkbox(label, key=f"pf_{key}")
 
         st.markdown("---")
-
-        # PRESENCIA G&C
         st.markdown("### 🍬 Presencia G&C")
         gyc = {
             "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
@@ -293,8 +303,6 @@ if st.session_state.pagina == "formulario":
                 gyc_vals[key] = st.checkbox(label, key=f"g_{key}")
 
         st.markdown("---")
-
-        # TIPOS DE EXHIBIDORES
         st.markdown("### 🗂️ Tipos de Exhibidores")
         tipos = {
             "LEGOS_GC": "LEGOS G&C", "TOBOGAN_RITZ_OREO": "TOBOGÁN (Ritz/Oreo)",
@@ -312,8 +320,6 @@ if st.session_state.pagina == "formulario":
         )
 
         st.markdown("---")
-
-        # CONTAMINACIÓN
         st.markdown("### ⚠️ Contaminación de Exhibidores")
         cols_cont = st.columns(3)
         with cols_cont[0]: cont_legos   = st.radio("LEGOS G&C", ["No", "Sí"], horizontal=True, key="cr_legos")
@@ -323,14 +329,12 @@ if st.session_state.pagina == "formulario":
         if cont_legos == "Sí" or cont_tobogan == "Sí" or cont_kiwi == "Sí":
             causa_contaminacion = st.text_input("Causa de contaminación", placeholder="Describe la causa...", key="causa_cont")
         cont_vals = {
-            "CONT_LEGOS_GC": 1 if cont_legos == "Sí" else 0,
+            "CONT_LEGOS_GC":          1 if cont_legos   == "Sí" else 0,
             "CONT_TOBOGAN_RITZ_OREO": 1 if cont_tobogan == "Sí" else 0,
-            "CONT_EXHIB_KIWI": 1 if cont_kiwi == "Sí" else 0,
+            "CONT_EXHIB_KIWI":        1 if cont_kiwi    == "Sí" else 0,
         }
 
         st.markdown("---")
-
-        # VISIBILIDAD
         st.markdown("### 👁️ Visibilidad por Exhibidor")
         st.markdown('<div class="leyenda-box">0 = No Tiene &nbsp;|&nbsp; 1 = Alta &nbsp;|&nbsp; 2 = Media &nbsp;|&nbsp; 3 = Baja</div>', unsafe_allow_html=True)
         VIS_OPTIONS = [0, 1, 2, 3]
@@ -341,8 +345,6 @@ if st.session_state.pagina == "formulario":
         with v3: vis_kiwi    = st.radio("EXHIB KIWI", VIS_OPTIONS, format_func=lambda x: VIS_LABELS[x], horizontal=True, key="vk")
 
         st.markdown("---")
-
-        # COLOCACIÓN TERCEROS
         st.markdown("### 🏷️ Colocación de Terceros")
         col_terc1, col_terc2 = st.columns([1, 3])
         with col_terc1:
@@ -356,27 +358,20 @@ if st.session_state.pagina == "formulario":
         marca_tercero = ", ".join([m for m in [marca_tercero_1, marca_tercero_2, marca_tercero_3, marca_tercero_4] if m.strip()])
 
         st.markdown("---")
-
-        # KPIs
         st.markdown("### 📊 Indicadores de la visita")
         k1, k2 = st.columns(2)
         with k1: efectividad_soles = st.number_input("Efectividad (S/)", min_value=0.0, step=1.0, value=0.0, format="%.2f")
         with k2: tiempo_pdc = st.number_input("Tiempo en PDC (minutos)", min_value=0, step=1, value=0)
 
         st.markdown("---")
-
-        # DETALLES IG
         st.markdown("### 📝 Detalles IG")
         detalles_ig = st.text_area("Detalles IG", placeholder="Ingresa los detalles IG...", height=100, label_visibility="collapsed")
 
         st.markdown("---")
-
-        # IMAGEN
         st.markdown("### 📷 Evidencia fotográfica")
         imagen_subida = st.file_uploader("Sube una imagen (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
         st.markdown("---")
-
         submitted = st.form_submit_button("💾 Guardar registro", use_container_width=True)
 
         if submitted:
@@ -523,10 +518,10 @@ elif st.session_state.pagina == "dashboard":
                 snap_tiempo   = df_snap_view["Tiempo_PDC"].mean() if "Tiempo_PDC" in df_snap_view.columns else 0
                 snap_terceros = (df_snap_view["Colocacion_Terceros"] == "Sí").mean() * 100 if "Colocacion_Terceros" in df_snap_view.columns else 0
                 for col_s, lbl, val, sub in [
-                    (sv1, "Visitas", str(snap_visitas), "registros"),
-                    (sv2, "Efectividad", f"S/ {snap_ventas:,.2f}", "total ventas"),
+                    (sv1, "Visitas",      str(snap_visitas),        "registros"),
+                    (sv2, "Efectividad",  f"S/ {snap_ventas:,.2f}", "total ventas"),
                     (sv3, "Tiempo Prom.", f"{snap_tiempo:.0f} min", "por visita"),
-                    (sv4, "Con Terceros", f"{snap_terceros:.0f}%", "de visitas"),
+                    (sv4, "Con Terceros", f"{snap_terceros:.0f}%",  "de visitas"),
                 ]:
                     with col_s:
                         st.markdown(f"""<div class="kpi-box"><div class="kpi-label">{lbl}</div>
@@ -548,7 +543,6 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
-    # Aplicar filtros
     mask = (df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)
     df_f = df[mask].copy()
     if filtro_vendedor != "Todos":
@@ -584,22 +578,17 @@ elif st.session_state.pagina == "dashboard":
                 unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # TICKET PROMEDIO
     st.markdown("#### 📈 Ticket Promedio por Vendedor y Día")
     st.caption("Ventas totales del vendedor ÷ clientes únicos visitados ese día")
     ticket_display = ticket_calc.rename(columns={
-        "Vendedor": "Vendedor", "Fecha_str": "Fecha",
-        "Ventas_Dia": "Ventas del Día (S/)", "Clientes_Dia": "Clientes Visitados",
-        "Ticket_Calculado": "Ticket Promedio (S/)"
+        "Fecha_str": "Fecha", "Ventas_Dia": "Ventas del Día (S/)",
+        "Clientes_Dia": "Clientes Visitados", "Ticket_Calculado": "Ticket Promedio (S/)"
     })
     ticket_display["Ventas del Día (S/)"]  = ticket_display["Ventas del Día (S/)"].map("S/ {:,.2f}".format)
     ticket_display["Ticket Promedio (S/)"] = ticket_display["Ticket Promedio (S/)"].map("S/ {:,.2f}".format)
     st.dataframe(ticket_display, use_container_width=True, hide_index=True)
 
     st.markdown("---")
-
-    # COLORES FIJOS
     PALETTE_PIE = ["#4CAF50","#FF5722","#9E9E9E","#FFC107","#2196F3","#9C27B0","#00BCD4"]
 
     col_g1, col_g2, col_g3 = st.columns(3)
@@ -648,7 +637,7 @@ elif st.session_state.pagina == "dashboard":
                 textfont=dict(size=10, family="DM Sans"), sort=False,
             ))
             fig_giro.update_layout(paper_bgcolor="white", font_family="DM Sans",
-                margin=dict(t=40, b=10, l=10, r=10), showlegend=True,
+                margin=dict(t=40,b=10,l=10,r=10), showlegend=True,
                 legend=dict(orientation="v", x=1.02, y=0.5, font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
                 title=dict(text="<b>GIROS DE NEGOCIO</b>", font=dict(size=13, family="DM Sans"), x=0.5, xanchor="center"))
             st.plotly_chart(fig_giro, use_container_width=True)
@@ -673,7 +662,7 @@ elif st.session_state.pagina == "dashboard":
                 textfont=dict(size=10, family="DM Sans"), sort=False,
             ))
             fig_terc.update_layout(paper_bgcolor="white", font_family="DM Sans",
-                margin=dict(t=40, b=10, l=10, r=10), showlegend=True,
+                margin=dict(t=40,b=10,l=10,r=10), showlegend=True,
                 legend=dict(orientation="v", x=1.02, y=0.5, font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
                 title=dict(text="<b>COLOCACIÓN DE TERCEROS</b>", font=dict(size=13, family="DM Sans"), x=0.5, xanchor="center"))
             st.plotly_chart(fig_terc, use_container_width=True)
@@ -698,10 +687,6 @@ elif st.session_state.pagina == "dashboard":
                     st.plotly_chart(fig_marcas, use_container_width=True)
 
     st.markdown("---")
-
-    # ═══════════════════════════════════════════
-    # GRÁFICA DE VISIBILIDAD
-    # ═══════════════════════════════════════════
     st.markdown("#### 👁️ Visibilidad por Exhibidor")
     st.caption("Cantidad de visitas por nivel de visibilidad en cada exhibidor")
 
@@ -709,56 +694,29 @@ elif st.session_state.pagina == "dashboard":
     for col_v, label_v in [
         ("Visibilidad_Legos",   "LEGOS G&C"),
         ("Visibilidad_Tobogan", "TOBOGÁN (Ritz/Oreo)"),
-        ("Visibilidad_Kiwi",    "EXHIB KIWI")
+        ("Visibilidad_Kiwi",    "EXHIB KIWI"),
     ]:
         if col_v in df_f.columns:
             serie_v = pd.to_numeric(df_f[col_v], errors="coerce").fillna(0)
             for nivel, nombre_nivel in [(1, "Alta"), (2, "Media"), (3, "Baja"), (0, "No Tiene")]:
                 cnt_v = int((serie_v == nivel).sum())
                 pct_v = cnt_v / total_visitas * 100 if total_visitas > 0 else 0
-                vis_data.append({
-                    "Exhibidor": label_v,
-                    "Nivel": nombre_nivel,
-                    "Cantidad": cnt_v,
-                    "Pct": round(pct_v, 1)
-                })
+                vis_data.append({"Exhibidor": label_v, "Nivel": nombre_nivel, "Cantidad": cnt_v, "Pct": round(pct_v,1)})
 
-    df_vis = pd.DataFrame(vis_data)
-    if not df_vis.empty:
-        df_vis["Etiqueta"] = df_vis.apply(
-            lambda r: f"{r['Cantidad']}  ({r['Pct']}%)" if r["Cantidad"] > 0 else "", axis=1
-        )
-        VIS_COLOR_MAP = {
-            "Alta":     "#4CAF50",
-            "Media":    "#FFC107",
-            "Baja":     "#e05252",
-            "No Tiene": "#b0b0b0"
-        }
-        fig_vis = px.bar(
-            df_vis,
-            x="Exhibidor",
-            y="Cantidad",
-            color="Nivel",
-            text="Etiqueta",
+    if vis_data:
+        df_vis = pd.DataFrame(vis_data)
+        df_vis["Etiqueta"] = df_vis.apply(lambda r: f"{r['Cantidad']}  ({r['Pct']}%)" if r["Cantidad"] > 0 else "", axis=1)
+        fig_vis = px.bar(df_vis, x="Exhibidor", y="Cantidad", color="Nivel", text="Etiqueta",
             barmode="group",
-            color_discrete_map=VIS_COLOR_MAP,
-            category_orders={"Nivel": ["Alta", "Media", "Baja", "No Tiene"]}
-        )
+            color_discrete_map={"Alta": "#4CAF50", "Media": "#FFC107", "Baja": "#e05252", "No Tiene": "#b0b0b0"},
+            category_orders={"Nivel": ["Alta", "Media", "Baja", "No Tiene"]})
         fig_vis.update_traces(textposition="outside")
-        fig_vis.update_layout(
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            font_family="DM Sans",
-            margin=dict(t=20, b=20),
-            xaxis_title="",
-            yaxis_title="Cantidad de visitas",
-            legend_title_text="Visibilidad",
-            legend=dict(orientation="h", y=-0.2)
-        )
+        fig_vis.update_layout(plot_bgcolor="white", paper_bgcolor="white", font_family="DM Sans",
+            margin=dict(t=20,b=20), xaxis_title="", yaxis_title="Cantidad de visitas",
+            legend_title_text="Visibilidad", legend=dict(orientation="h", y=-0.2))
         st.plotly_chart(fig_vis, use_container_width=True)
 
     st.markdown("---")
-
     col_g4, col_g5 = st.columns(2)
 
     with col_g4:
@@ -784,27 +742,31 @@ elif st.session_state.pagina == "dashboard":
             df_map = df_map.dropna(subset=["Latitud","Longitud"])
             if not df_map.empty:
                 zonas_unicas = df_map["Zona"].dropna().unique().tolist() if "Zona" in df_map.columns else []
-                palette_map = ["#4472C4","#e05252","#6a9e4f","#FF7F0E","#7b5ea7","#FFBF00","#2196F3","#00BCD4"]
-                zona_color = {z: palette_map[i % len(palette_map)] for i, z in enumerate(zonas_unicas)}
+                palette_map  = ["#4472C4","#e05252","#6a9e4f","#FF7F0E","#7b5ea7","#FFBF00","#2196F3","#00BCD4"]
+                zona_color   = {z: palette_map[i % len(palette_map)] for i, z in enumerate(zonas_unicas)}
                 fig_map = go.Figure()
                 for zona, grp in df_map.groupby("Zona"):
-                    ch = zona_color.get(zona,"#888888")
-                    r2,g2,b2 = int(ch[1:3],16),int(ch[3:5],16),int(ch[5:7],16)
-                    fig_map.add_trace(go.Scattermapbox(lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
+                    ch = zona_color.get(zona, "#888888")
+                    r2,g2,b2 = int(ch[1:3],16), int(ch[3:5],16), int(ch[5:7],16)
+                    fig_map.add_trace(go.Scattermapbox(
+                        lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
                         mode="markers", marker=dict(size=40, color=f"rgba({r2},{g2},{b2},0.18)"),
                         hoverinfo="skip", showlegend=False, name=f"_sombra_{zona}"))
                 for zona, grp in df_map.groupby("Zona"):
-                    ch = zona_color.get(zona,"#888888")
+                    ch = zona_color.get(zona, "#888888")
                     giro_col = grp["Giro_Negocio"].str.replace(r"^\d+ - ","",regex=True) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
-                    fig_map.add_trace(go.Scattermapbox(lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
+                    fig_map.add_trace(go.Scattermapbox(
+                        lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
                         mode="markers", marker=dict(size=13, color=ch), name=zona,
                         text=grp["Nombre_Cliente"].tolist(),
                         customdata=list(zip(grp["Zona"].tolist(), grp["Efectividad_Soles"].tolist(), giro_col.tolist())),
                         hovertemplate="<b>%{text}</b><br>Zona: %{customdata[0]}<br>Venta: S/ %{customdata[1]}<br>Giro: %{customdata[2]}<extra></extra>"))
-                lat_c = df_map["Latitud"].mean(); lon_c = df_map["Longitud"].mean()
+                lat_c   = df_map["Latitud"].mean()
+                lon_c   = df_map["Longitud"].mean()
                 lat_rng = df_map["Latitud"].max() - df_map["Latitud"].min()
                 zoom_auto = 13 if lat_rng < 0.01 else (11 if lat_rng < 0.05 else 9)
-                fig_map.update_layout(mapbox=dict(style="open-street-map", center=dict(lat=lat_c, lon=lon_c), zoom=zoom_auto),
+                fig_map.update_layout(
+                    mapbox=dict(style="open-street-map", center=dict(lat=lat_c, lon=lon_c), zoom=zoom_auto),
                     margin=dict(t=0,b=0,l=0,r=0), height=380,
                     legend=dict(title="Zona", bgcolor="rgba(255,255,255,0.85)", bordercolor="#ddd", borderwidth=1),
                     font_family="DM Sans")
@@ -813,8 +775,6 @@ elif st.session_state.pagina == "dashboard":
                 st.info("Agrega visitas con coordenadas para ver el mapa.")
 
     st.markdown("---")
-
-    # PRESENCIA DE PRODUCTOS (3 tabs)
     st.markdown("#### 📦 Presencia de Productos (% de visitas)")
 
     def render_presencia_bar(productos_dict, df_source, total_vis):
@@ -842,31 +802,30 @@ elif st.session_state.pagina == "dashboard":
     with tab_biscuits:
         render_presencia_bar({
             "OREO_34GR":"OREO 34GR","OREO_54GR":"OREO 54GR","OREO_ROLLO":"OREO ROLLO",
-            "RITZ_ROLLO":"RITZ ROLLO","RITZ_TACO":"RITZ TACO",
+            "RITZ_ROLLO":"RITZ ROLLO","RITZ_PACK":"RITZ PACK",
             "FIELD_CC":"FIELD CC","FIELD_DP":"FIELD DP","FIELD_VAIN":"FIELD VAIN",
-            "CLUB_SOCIAL_TRA":"CLUB SOCIAL TRA"
+            "CLUB_SOCIAL_TRA":"CLUB SOCIAL TRA",
         }, df_f, total_visitas)
     with tab_foco:
         render_presencia_bar({
-            "OREO_FRESA_TACO":        "OREO FRESA (Taco)",
+            "OREO_FRESA_PACK":        "OREO FRESA (Pack)",
             "OREO_FRESA_ROLLO":       "OREO FRESA (Rollo)",
-            "OREO_CHOCO_LIMON_TACO":  "OREO CHOCO LIMÓN (Taco)",
+            "OREO_CHOCO_LIMON_PACK":  "OREO CHOCO LIMÓN (Pack)",
             "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB":        "CLUB SOCIAL (Sabores)",
+            "OREO_CLASICA_ROLLO":     "OREO CLÁSICA (Rollo)",
             "ROLLO_OREO":             "ROLLO OREO",
-            "ROLLO_VAINILLA":         "ROLLO VAINILLA",
-            "ROLLO_CHOCOLATE":        "ROLLO CHOCOLATE",
+            "ROLLO_GOLDEN":           "OREO GOLDEN (Rollo)",
+            "ROLLO_CHOCOLATE":        "OREO CHOCOLATE (Rollo)",
         }, df_f, total_visitas)
     with tab_gyc:
         render_presencia_bar({
             "TRIDENT_5s":"TRIDENT 5s","TRIDENT_EVUP":"TRIDENT EVUP",
             "HALLS_12s":"HALLS 12s","HALLS_100s":"HALLS 100s",
-            "CHICLETS_2S":"CHICLETS 2S","BUBBALOO":"BUBBALOO"
+            "CHICLETS_2S":"CHICLETS 2S","BUBBALOO":"BUBBALOO",
         }, df_f, total_visitas)
 
     st.markdown("---")
-
-    # TABLA
     st.markdown("#### 📋 Últimas Visitas")
     cols_tabla = ["Fecha","Codigo_PDC","Nombre_Cliente","Giro_Negocio","Vendedor","Codigo_Vendedor",
                   "Mesa","Zona","Efectividad_Soles","Tiempo_PDC",
@@ -875,8 +834,6 @@ elif st.session_state.pagina == "dashboard":
     st.dataframe(df_f[cols_existentes].sort_values("Fecha", ascending=False).head(50).reset_index(drop=True), use_container_width=True)
 
     st.markdown("---")
-
-    # DESCARGAS
     st.markdown("#### ⬇️ Descargas")
     dcol1, dcol2 = st.columns(2)
     with dcol1:
