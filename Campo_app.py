@@ -6,8 +6,10 @@ from datetime import date
 import os
 import io
 import zipfile
+import folium
+from streamlit_folium import st_folium
 
-st.set_page_config(page_title="SUPERVISIÓN CANAL TRADICIONAL", layout="wide", page_icon=None)
+st.set_page_config(page_title="SUPERVISIÓN CANAL TRADICIONAL MAU VERSION", layout="wide", page_icon=None)
 
 st.markdown("""
 <style>
@@ -171,17 +173,50 @@ if st.session_state.pagina == "formulario":
 
     st.markdown("# Registro de Visita")
     st.markdown("---")
-    st.markdown("### 📍 Ubicación del PDC")
 
+    st.markdown("### 📍 Ubicación del PDC")
+    
     if st.session_state.gps_lat and st.session_state.gps_lon:
-        st.success(f"✅ Ubicación guardada: **{st.session_state.gps_lat}, {st.session_state.gps_lon}**")
+        lugar_guardado = st.session_state.get("gps_lugar", "")
+        if lugar_guardado:
+            st.success(f"✅ Ubicación guardada: {lugar_guardado} \ Coordenadas: {st.session_state.gps_lat}, {st.session_state.gps_lon}")
+        else:
+            st.success(f"✅ Ubicación guardada: {st.session_state.gps_lat}, {st.session_state.gps_lon}")
         if st.button("Cambiar ubicación"):
             st.session_state.gps_lat = ""
             st.session_state.gps_lon = ""
             st.session_state.geo_resultados = []
+            if "map_click" in st.session_state:
+                del st.session_state["map_click"]
             st.rerun()
+    
     else:
-        st.caption("Busca la dirección del PDC:")
+        st.caption("Ingresa las coordenadas o búscalas en el mapa:")
+    
+        # ── Campos manuales de coordenadas ────────────────────
+        cm1, cm2, cm3 = st.columns([2, 2, 1])
+        with cm1:
+            lat_m = st.text_input("Latitud", placeholder="-12.046374", key="lat_man")
+        with cm2:
+            lon_m = st.text_input("Longitud", placeholder="-77.042793", key="lon_man")
+        with cm3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Guardar", key="btn_manual"):
+                if lat_m and lon_m:
+                    try:
+                        float(lat_m.strip())
+                        float(lon_m.strip())
+                        st.session_state.gps_lat = lat_m.strip()
+                        st.session_state.gps_lon = lon_m.strip()
+                        st.rerun()
+                    except ValueError:
+                        st.error("Deben ser números. Ej: -12.046374")
+                else:
+                    st.error("Completa latitud y longitud.")
+    
+        st.markdown("**¿No sabes las coordenadas? Búscalas en el mapa:**")
+    
+        # ── Buscador por dirección ─────────────────────────────
         col_dir1, col_dir2 = st.columns([4, 1])
         with col_dir1:
             dir_input = st.text_input(
@@ -189,43 +224,210 @@ if st.session_state.pagina == "formulario":
                 label_visibility="collapsed", key="dir_input"
             )
         with col_dir2:
-            if st.button("Buscar", use_container_width=True, key="btn_buscar_dir"):
+            if st.button("🔍 Buscar", use_container_width=True, key="btn_buscar_dir"):
                 if dir_input.strip():
                     with st.spinner("Buscando..."):
                         resultados = buscar_coordenadas(dir_input.strip())
                     if resultados:
                         st.session_state.geo_resultados = resultados
+                        # Centra el mapa en el primer resultado
+                        st.session_state.map_center = [
+                            resultados[0]["lat"],
+                            resultados[0]["lon"]
+                        ]
+                        st.session_state.map_zoom = 16
                     else:
                         st.session_state.geo_resultados = []
-                        st.warning("Sin resultados. Ingresa coordenadas manualmente.")
-
+                        st.warning("Sin resultados. Ingresa las coordenadas manualmente.")
+    
+        # Dropdown de resultados de búsqueda
         if st.session_state.geo_resultados:
             opciones = {r["label"]: (r["lat"], r["lon"]) for r in st.session_state.geo_resultados}
-            elegida  = st.selectbox("Selecciona la ubicación:", list(opciones.keys()), key="geo_sel")
-            if st.button("Confirmar esta ubicación", key="geo_ok"):
+            elegida = st.selectbox("Selecciona la ubicación:", list(opciones.keys()), key="geo_sel")
+            if st.button("Confirmar esta dirección", key="geo_ok"):
                 la, lo = opciones[elegida]
                 st.session_state.gps_lat = str(round(la, 6))
                 st.session_state.gps_lon = str(round(lo, 6))
                 st.session_state.geo_resultados = []
                 st.rerun()
-
-        with st.expander("Ingresar coordenadas manualmente"):
-            cm1, cm2, cm3 = st.columns([2, 2, 1])
-            with cm1: lat_m = st.text_input("Latitud",  placeholder="-8.111640",  key="lat_man")
-            with cm2: lon_m = st.text_input("Longitud", placeholder="-79.028700", key="lon_man")
-            with cm3:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("Guardar", key="btn_manual"):
-                    if lat_m and lon_m:
-                        try:
-                            float(lat_m.strip()); float(lon_m.strip())
-                            st.session_state.gps_lat = lat_m.strip()
-                            st.session_state.gps_lon = lon_m.strip()
-                            st.rerun()
-                        except ValueError:
-                            st.error("Deben ser números. Ej: -8.111640")
-
+    
+        # ── Mapa interactivo ───────────────────────────────────
+        # ── Toggle Ajuste Manual ───────────────────────────────────
+        if "ajuste_manual" not in st.session_state:
+            st.session_state["ajuste_manual"] = False
+        
+        col_tog1, col_tog2 = st.columns([1, 3])
+        with col_tog1:
+            if st.session_state["ajuste_manual"]:
+                if st.button("🔒 Desactivar ajuste", key="btn_toggle_ajuste", use_container_width=True):
+                    st.session_state["ajuste_manual"] = False
+                    st.rerun()
+            else:
+                if st.button("✏️ Ajuste manual", key="btn_toggle_ajuste", use_container_width=True):
+                    st.session_state["ajuste_manual"] = True
+                    st.rerun()
+        
+        with col_tog2:
+            if st.session_state["ajuste_manual"]:
+                st.success("✅ Modo ajuste activo — arrastra el marcador rojo al punto exacto")
+            else:
+                st.info("ℹ️ Activa el ajuste manual para mover el marcador")
+        
+        # ── Mapa ───────────────────────────────────────────────────
+        center = st.session_state.get("map_center", [-12.046374, -77.042793])
+        zoom   = st.session_state.get("map_zoom", 13)
+        
+        m = folium.Map(location=center, zoom_start=zoom, tiles="OpenStreetMap")
+        
+        marker = folium.Marker(
+            location=center,
+            draggable=st.session_state["ajuste_manual"],   # ← aquí está el toggle
+            tooltip="📍 Arrástrame para ubicar el PDC" if st.session_state["ajuste_manual"] else "📍 Activa el ajuste manual para moverme",
+            icon=folium.Icon(
+                color="red" if st.session_state["ajuste_manual"] else "gray",
+                icon="map-marker",
+                prefix="fa"
+            ),
+        )
+        marker.add_to(m)
+        
+        map_data = st_folium(m, height=420, use_container_width=True, key="folium_map")
+        
+        # ── Captura posición del marcador ──────────────────────────
+        # ── Guarda el último estado del mapa para usarlo con el botón ──
+        if st.session_state["ajuste_manual"] and map_data:
+            st.session_state["map_data_ultimo"] = map_data
+        
+        # ── Botón Obtener ubicación ────────────────────────────────────
+        if st.session_state["ajuste_manual"]:
+            if st.button("📌 Obtener ubicación del marcador", key="btn_obtener_ubi", use_container_width=False):
+                map_data_guardado = st.session_state.get("map_data_ultimo")
+                lat_nuevo, lon_nuevo = None, None
+        
+                if map_data_guardado:
+                    # st_folium devuelve la posición arrastrada aquí
+                    if map_data_guardado.get("last_object_clicked") and isinstance(map_data_guardado["last_object_clicked"], dict):
+                        pos = map_data_guardado["last_object_clicked"]
+                        if pos.get("lat"):
+                            lat_nuevo = round(pos["lat"], 6)
+                            lon_nuevo = round(pos["lng"], 6)
+        
+                    # fallback: centro actual del mapa
+                    if lat_nuevo is None and map_data_guardado.get("center"):
+                        lat_nuevo = round(map_data_guardado["center"]["lat"], 6)
+                        lon_nuevo = round(map_data_guardado["center"]["lng"], 6)
+        
+                if lat_nuevo is not None:
+                    st.session_state["map_click"] = (lat_nuevo, lon_nuevo)
+                    st.session_state["map_click_prev"] = (lat_nuevo, lon_nuevo)
+                    # Geocodificación inversa
+                    try:
+                        import requests as _req
+                        r = _req.get(
+                            "https://nominatim.openstreetmap.org/reverse",
+                            params={"lat": lat_nuevo, "lon": lon_nuevo, "format": "json", "accept-language": "es"},
+                            headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                            timeout=5,
+                        )
+                        if r.status_code == 200:
+                            addr = r.json().get("address", {})
+                            nombre = (
+                                addr.get("road") or addr.get("neighbourhood") or
+                                addr.get("suburb") or addr.get("town") or
+                                addr.get("city") or "Ubicación seleccionada"
+                            )
+                            ciudad = addr.get("city") or addr.get("town") or addr.get("village") or ""
+                            st.session_state["map_lugar"] = f"{nombre}, {ciudad}".strip(", ")
+                        else:
+                            st.session_state["map_lugar"] = ""
+                    except Exception:
+                        st.session_state["map_lugar"] = ""
+                    st.rerun()
+                else:
+                    st.warning("No se pudo leer la posición. Intenta hacer clic en el marcador primero.")
+        
+        # ── Botón obtener ubicación ────────────────────────────────
+        if st.session_state.get("map_click"):
+            lat_click, lon_click = st.session_state["map_click"]
+            lugar = st.session_state.get("map_lugar", "")
+        
+            st.markdown("---")
+            col_info1, col_info2 = st.columns([3, 1])
+            with col_info1:
+                if lugar:
+                    st.markdown(f"""
+                    <div style="background:#f0f4ff;border:1px solid #c5d0e8;border-radius:8px;padding:10px 14px;">
+                        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Ubicación seleccionada</div>
+                        <div style="font-size:15px;font-weight:600;color:#1a1a1a;">📍 {lugar}</div>
+                        <div style="font-size:12px;color:#888;margin-top:2px;">{lat_click}, {lon_click}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background:#f0f4ff;border:1px solid #c5d0e8;border-radius:8px;padding:10px 14px;">
+                        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Ubicación seleccionada</div>
+                        <div style="font-size:15px;font-weight:600;color:#1a1a1a;">📍 {lat_click}, {lon_click}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+            with col_info2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("✅ Confirmar punto", key="geo_map_ok", use_container_width=True):
+                        st.session_state.gps_lat = str(lat_click)
+                        st.session_state.gps_lon = str(lon_click)
+            
+                        # Geocodificación inversa en el momento exacto del clic
+                        lugar_final = st.session_state.get("map_lugar", "")
+                        if not lugar_final:
+                            with st.spinner("Obteniendo nombre del lugar..."):
+                                try:
+                                    import requests as _req
+                                    r = _req.get(
+                                        "https://nominatim.openstreetmap.org/reverse",
+                                        params={
+                                            "lat": lat_click,
+                                            "lon": lon_click,
+                                            "format": "json",
+                                            "accept-language": "es",
+                                            "zoom": 18,
+                                        },
+                                        headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                                        timeout=6,
+                                    )
+                                    if r.status_code == 200:
+                                        addr = r.json().get("address", {})
+                                        nombre = (
+                                            addr.get("road") or
+                                            addr.get("pedestrian") or
+                                            addr.get("neighbourhood") or
+                                            addr.get("suburb") or
+                                            addr.get("town") or
+                                            addr.get("city") or
+                                            "Ubicación seleccionada"
+                                        )
+                                        ciudad = (
+                                            addr.get("city") or
+                                            addr.get("town") or
+                                            addr.get("village") or
+                                            addr.get("county") or ""
+                                        )
+                                        distrito = addr.get("suburb") or addr.get("neighbourhood") or ""
+                                        partes = [p for p in [nombre, distrito, ciudad] if p and p != nombre]
+                                        lugar_final = ", ".join([nombre] + partes[:2])
+                                except Exception:
+                                    lugar_final = ""
+            
+                        st.session_state["gps_lugar"] = lugar_final
+                        st.session_state["ajuste_manual"] = False
+                        st.session_state.pop("map_click", None)
+                        st.session_state.pop("map_click_prev", None)
+                        st.session_state.pop("map_lugar", None)
+                        st.rerun()
+        
+        
+        
     st.markdown("---")
+    
 
     with st.form("form_visita", clear_on_submit=False):
 
@@ -379,7 +581,7 @@ if st.session_state.pagina == "formulario":
             else:
                 img_path = ""
                 if imagen_subida is not None:
-                    img_filename = f"{codigo_pdc}_{str(fecha)}_{imagen_subida.name}"
+                    img_filename = f"{codigo_pdc}{str(fecha)}{imagen_subida.name}"
                     img_path = os.path.join(IMG_FOLDER, img_filename)
                     with open(img_path, "wb") as f:
                         f.write(imagen_subida.getbuffer())
@@ -423,7 +625,7 @@ elif st.session_state.pagina == "dashboard":
     with col_btn3:
         if not st.session_state.confirmar_eliminar:
             st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-            if st.button("🗑 Eliminar historial"):
+            if st.button("🗑️ Eliminar historial"):
                 st.session_state.confirmar_eliminar = True; st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -482,7 +684,7 @@ elif st.session_state.pagina == "dashboard":
                     if filtro_vendedor != "Todos": snap_key += f" ({filtro_vendedor})"
                     st.session_state.snapshots[snap_key] = df_snap.to_csv(index=False)
                     guardar_snapshots_disco()
-                    st.success(f"✅ Guardado: **{snap_key}** ({len(df_snap)} registros)")
+                    st.success(f"✅ Guardado: *{snap_key}* ({len(df_snap)} registros)")
 
     with tab_historial:
         if not st.session_state.snapshots:
@@ -496,7 +698,7 @@ elif st.session_state.pagina == "dashboard":
                     st.session_state["snap_activo"] = snap_sel
             with hcol2:
                 st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-                if st.button("🗑 Eliminar este período", use_container_width=True, key="btn_del_snap"):
+                if st.button("🗑️ Eliminar este período", use_container_width=True, key="btn_del_snap"):
                     del st.session_state.snapshots[snap_sel]
                     if st.session_state.get("snap_activo") == snap_sel:
                         del st.session_state["snap_activo"]
@@ -507,7 +709,7 @@ elif st.session_state.pagina == "dashboard":
                 snap_activo = st.session_state["snap_activo"]
                 df_snap_view = pd.read_csv(io.StringIO(st.session_state.snapshots[snap_activo]))
                 df_snap_view["Fecha"] = pd.to_datetime(df_snap_view["Fecha"])
-                st.success(f"📂 Mostrando: **{snap_activo}** — {len(df_snap_view)} registros")
+                st.success(f"📂 Mostrando: *{snap_activo}* — {len(df_snap_view)} registros")
                 for col2 in ["Efectividad_Soles", "Tiempo_PDC"]:
                     if col2 in df_snap_view.columns:
                         df_snap_view[col2] = pd.to_numeric(df_snap_view[col2], errors="coerce").fillna(0)
@@ -750,7 +952,7 @@ elif st.session_state.pagina == "dashboard":
                     fig_map.add_trace(go.Scattermapbox(
                         lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
                         mode="markers", marker=dict(size=40, color=f"rgba({r2},{g2},{b2},0.18)"),
-                        hoverinfo="skip", showlegend=False, name=f"_sombra_{zona}"))
+                        hoverinfo="skip", showlegend=False, name=f"sombra{zona}"))
                 for zona, grp in df_map.groupby("Zona"):
                     ch = zona_color.get(zona, "#888888")
                     giro_col = grp["Giro_Negocio"].str.replace(r"^\d+ - ","",regex=True) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
@@ -858,3 +1060,4 @@ elif st.session_state.pagina == "dashboard":
                 file_name=f"imagenes_MDZ_{date.today()}.zip", mime="application/zip", use_container_width=True)
         else:
             st.info("No hay imágenes guardadas aún.")
+            
