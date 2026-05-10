@@ -2,3 +2,6 @@ streamlit
 pandas
 plotly
 openpyxl
+requests
+folium
+streamlit-folium
