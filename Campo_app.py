@@ -191,30 +191,30 @@ if st.session_state.pagina == "formulario":
             st.rerun()
     
     else:
-        st.caption("Ingresa las coordenadas o búscalas en el mapa:")
+        st.caption("Encuentra tu ubicacion usando el buscador:")
     
         # ── Campos manuales de coordenadas ────────────────────
-        cm1, cm2, cm3 = st.columns([2, 2, 1])
-        with cm1:
-            lat_m = st.text_input("Latitud", placeholder="-12.046374", key="lat_man")
-        with cm2:
-            lon_m = st.text_input("Longitud", placeholder="-77.042793", key="lon_man")
-        with cm3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Guardar", key="btn_manual"):
-                if lat_m and lon_m:
-                    try:
-                        float(lat_m.strip())
-                        float(lon_m.strip())
-                        st.session_state.gps_lat = lat_m.strip()
-                        st.session_state.gps_lon = lon_m.strip()
-                        st.rerun()
-                    except ValueError:
-                        st.error("Deben ser números. Ej: -12.046374")
-                else:
-                    st.error("Completa latitud y longitud.")
+ #       cm1, cm2, cm3 = st.columns([2, 2, 1])
+ #       with cm1:
+ #           lat_m = st.text_input("Latitud", placeholder="-12.046374", key="lat_man")
+ #       with cm2:
+ #           lon_m = st.text_input("Longitud", placeholder="-77.042793", key="lon_man")
+ #       with cm3:
+ #           st.markdown("<br>", unsafe_allow_html=True)
+ #           if st.button("Guardar", key="btn_manual"):
+ #              if lat_m and lon_m:
+ #                    try:
+ #                        float(lat_m.strip())
+ #                        float(lon_m.strip())
+ #                        st.session_state.gps_lat = lat_m.strip()
+ #                        st.session_state.gps_lon = lon_m.strip()
+ #                        st.rerun()
+ #                    except ValueError:
+ #                        st.error("Deben ser números. Ej: -12.046374")
+ #                else:
+ #                    st.error("Completa latitud y longitud.")
     
-        st.markdown("**¿No sabes las coordenadas? Búscalas en el mapa:**")
+        st.markdown("**Ingresa tu ubicación**")
     
         # ── Buscador por dirección ─────────────────────────────
         col_dir1, col_dir2 = st.columns([4, 1])
@@ -274,77 +274,160 @@ if st.session_state.pagina == "formulario":
                 st.info("ℹ️ Activa el ajuste manual para mover el marcador")
         
         # ── Mapa ───────────────────────────────────────────────────
-        center = st.session_state.get("map_center", [-12.046374, -77.042793])
+        # ── Mapa ───────────────────────────────────────────────────
+        center = st.session_state.get("map_center", [-8.111801, -79.028678])
         zoom   = st.session_state.get("map_zoom", 13)
         
         m = folium.Map(location=center, zoom_start=zoom, tiles="OpenStreetMap")
         
-        marker = folium.Marker(
-            location=center,
-            draggable=st.session_state["ajuste_manual"],   # ← aquí está el toggle
-            tooltip="📍 Arrástrame para ubicar el PDC" if st.session_state["ajuste_manual"] else "📍 Activa el ajuste manual para moverme",
-            icon=folium.Icon(
-                color="red" if st.session_state["ajuste_manual"] else "gray",
-                icon="map-marker",
-                prefix="fa"
-            ),
-        )
-        marker.add_to(m)
+        if not st.session_state["ajuste_manual"]:
+            folium.Marker(
+                location=center,
+                draggable=False,
+                tooltip="📍 Activa el ajuste manual para ubicar el PDC",
+                icon=folium.Icon(color="gray", icon="map-marker", prefix="fa"),
+            ).add_to(m)
         
-        map_data = st_folium(m, height=420, use_container_width=True, key="folium_map")
-        
-        # ── Captura posición del marcador ──────────────────────────
-        # ── Guarda el último estado del mapa para usarlo con el botón ──
-        if st.session_state["ajuste_manual"] and map_data:
-            st.session_state["map_data_ultimo"] = map_data
-        
-        # ── Botón Obtener ubicación ────────────────────────────────────
+        # Crosshair + pin rojo fijo en el centro, visible solo en modo ajuste
         if st.session_state["ajuste_manual"]:
-            if st.button("📌 Obtener ubicación del marcador", key="btn_obtener_ubi", use_container_width=False):
-                map_data_guardado = st.session_state.get("map_data_ultimo")
-                lat_nuevo, lon_nuevo = None, None
+            m.get_root().html.add_child(folium.Element("""
+            <style>
+            .stfolium-container { position: relative !important; }
         
-                if map_data_guardado:
-                    # st_folium devuelve la posición arrastrada aquí
-                    if map_data_guardado.get("last_object_clicked") and isinstance(map_data_guardado["last_object_clicked"], dict):
-                        pos = map_data_guardado["last_object_clicked"]
-                        if pos.get("lat"):
-                            lat_nuevo = round(pos["lat"], 6)
-                            lon_nuevo = round(pos["lng"], 6)
+            /* Sombra circular debajo del pin */
+            .crosshair-shadow {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, 2px);
+                width: 14px;
+                height: 6px;
+                background: rgba(0,0,0,0.25);
+                border-radius: 50%;
+                z-index: 9999;
+                pointer-events: none;
+            }
         
-                    # fallback: centro actual del mapa
-                    if lat_nuevo is None and map_data_guardado.get("center"):
-                        lat_nuevo = round(map_data_guardado["center"]["lat"], 6)
-                        lon_nuevo = round(map_data_guardado["center"]["lng"], 6)
+            /* Pin rojo SVG centrado */
+            .crosshair-pin {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -100%);
+                z-index: 9999;
+                pointer-events: none;
+                animation: bounce 1.2s infinite ease-in-out;
+            }
         
-                if lat_nuevo is not None:
+            /* Líneas de mira */
+            .crosshair-lines {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 60px;
+                height: 60px;
+                z-index: 9998;
+                pointer-events: none;
+            }
+        
+            @keyframes bounce {
+                0%, 100% { transform: translate(-50%, -100%); }
+                50%       { transform: translate(-50%, -115%); }
+            }
+            </style>
+        
+            <div class="crosshair-shadow"></div>
+        
+            <div class="crosshair-pin">
+                <svg width="36" height="48" viewBox="0 0 36 48" xmlns="http://www.w3.org/2000/svg">
+                    <filter id="shadow">
+                        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.3)"/>
+                    </filter>
+                    <path d="M18 0C8.059 0 0 8.059 0 18c0 12 18 30 18 30S36 30 36 18C36 8.059 27.941 0 18 0z"
+                          fill="#e05252" filter="url(#shadow)"/>
+                    <circle cx="18" cy="18" r="8" fill="white"/>
+                    <circle cx="18" cy="18" r="4.5" fill="#e05252"/>
+                </svg>
+            </div>
+        
+            <svg class="crosshair-lines" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+                <!-- línea horizontal izquierda -->
+                <line x1="0"  y1="30" x2="22" y2="30" stroke="#e05252" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+                <!-- línea horizontal derecha -->
+                <line x1="38" y1="30" x2="60" y2="30" stroke="#e05252" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+                <!-- línea vertical arriba -->
+                <line x1="30" y1="0"  x2="30" y2="22" stroke="#e05252" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+                <!-- línea vertical abajo -->
+                <line x1="30" y1="38" x2="30" y2="60" stroke="#e05252" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.6"/>
+            </svg>
+            """))
+        
+        map_data = st_folium(
+            m,
+            height=420,
+            use_container_width=True,
+            key="folium_map",
+            returned_objects=["center", "zoom"],
+        )
+        
+        # ── Guarda el center cada vez que cambia ───────────────────
+        if map_data and map_data.get("center"):
+            c = map_data["center"]
+            st.session_state["map_center_actual"] = [
+                round(c["lat"], 6),
+                round(c["lng"], 6),
+            ]
+        
+        # ── Botón Obtener ubicación ─────────────────────────────────
+        if st.session_state["ajuste_manual"]:
+            col_ob1, col_ob2 = st.columns([2, 3])
+            with col_ob1:
+                st.caption("Mueve el mapa hasta centrar el punto rojo en el PDC")
+            with col_ob2:
+                if st.button("📌 Obtener ubicación del centro", key="btn_obtener_ubi", use_container_width=True):
+                    pos = st.session_state.get("map_center_actual") or center
+                    lat_nuevo = round(pos[0], 6)
+                    lon_nuevo = round(pos[1], 6)
+        
                     st.session_state["map_click"] = (lat_nuevo, lon_nuevo)
-                    st.session_state["map_click_prev"] = (lat_nuevo, lon_nuevo)
-                    # Geocodificación inversa
-                    try:
-                        import requests as _req
-                        r = _req.get(
-                            "https://nominatim.openstreetmap.org/reverse",
-                            params={"lat": lat_nuevo, "lon": lon_nuevo, "format": "json", "accept-language": "es"},
-                            headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
-                            timeout=5,
-                        )
-                        if r.status_code == 200:
-                            addr = r.json().get("address", {})
-                            nombre = (
-                                addr.get("road") or addr.get("neighbourhood") or
-                                addr.get("suburb") or addr.get("town") or
-                                addr.get("city") or "Ubicación seleccionada"
+                    st.session_state["map_center"] = [lat_nuevo, lon_nuevo]
+        
+                    with st.spinner("Obteniendo nombre del lugar..."):
+                        try:
+                            import requests as _req
+                            r = _req.get(
+                                "https://nominatim.openstreetmap.org/reverse",
+                                params={
+                                    "lat": lat_nuevo,
+                                    "lon": lon_nuevo,
+                                    "format": "json",
+                                    "accept-language": "es",
+                                    "zoom": 18,
+                                },
+                                headers={"User-Agent": "MDZ-SupervisionApp/1.0"},
+                                timeout=6,
                             )
-                            ciudad = addr.get("city") or addr.get("town") or addr.get("village") or ""
-                            st.session_state["map_lugar"] = f"{nombre}, {ciudad}".strip(", ")
-                        else:
+                            if r.status_code == 200:
+                                addr = r.json().get("address", {})
+                                nombre = (
+                                    addr.get("road") or addr.get("pedestrian") or
+                                    addr.get("neighbourhood") or addr.get("suburb") or
+                                    addr.get("town") or addr.get("city") or
+                                    "Ubicación seleccionada"
+                                )
+                                ciudad = (
+                                    addr.get("city") or addr.get("town") or
+                                    addr.get("village") or addr.get("county") or ""
+                                )
+                                distrito = addr.get("suburb") or addr.get("neighbourhood") or ""
+                                partes = [p for p in [distrito, ciudad] if p and p != nombre]
+                                st.session_state["map_lugar"] = ", ".join([nombre] + partes[:2])
+                            else:
+                                st.session_state["map_lugar"] = ""
+                        except Exception:
                             st.session_state["map_lugar"] = ""
-                    except Exception:
-                        st.session_state["map_lugar"] = ""
                     st.rerun()
-                else:
-                    st.warning("No se pudo leer la posición. Intenta hacer clic en el marcador primero.")
         
         # ── Botón obtener ubicación ────────────────────────────────
         if st.session_state.get("map_click"):
