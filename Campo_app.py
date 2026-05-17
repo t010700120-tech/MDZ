@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -117,6 +116,9 @@ if not st.session_state.snapshots and os.path.exists(SNAPSHOTS_FILE):
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIÓN PRINCIPAL: GENERAR DASHBOARD EXCEL CON GRÁFICOS
+# ORDEN: KPIs → Ticket → Mapa → Giro → Efectividad → Exhibidores
+#        → Tipo Negocio/Exhibidor → Terceros → Marcas
+#        → Contaminación → Visibilidad → Presencia → Tabla
 # ═══════════════════════════════════════════════════════════════
 def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_vendedor,
                              total_visitas, total_ventas, ticket_prom_global,
@@ -128,14 +130,15 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
     import numpy as np
+    from collections import Counter
 
-    PALETTE = ["#4472C4", "#e05252", "#6a9e4f", "#FF7F0E", "#7b5ea7", "#FFC107", "#00BCD4", "#FF69B4",
-               "#8BC34A", "#FF5722", "#9C27B0", "#03A9F4", "#CDDC39", "#795548", "#607D8B"]
-    PALETTE_CONT = {"Contaminado": "#e05252", "Limpio": "#4CAF50"}
+    # ── paleta ────────────────────────────────────────────────────────────
+    PALETTE = ["#4472C4", "#e05252", "#6a9e4f", "#FF7F0E", "#7b5ea7",
+               "#FFC107", "#00BCD4", "#FF69B4", "#8BC34A", "#FF5722",
+               "#9C27B0", "#03A9F4", "#CDDC39", "#795548", "#607D8B"]
 
-    thin = Side(style="thin", color="CCCCCC")
+    thin   = Side(style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     dash_buf = io.BytesIO()
@@ -143,464 +146,526 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     ws = wb.active
     ws.title = "Dashboard Operativo"
 
-    def cell_style(row, col, value, bold=False, bg=None, font_size=11, align="center",
-                   wrap=False, font_color="000000", border_on=False):
-        cell = ws.cell(row=row, column=col, value=value)
-        cell.font = Font(bold=bold, size=font_size, color=font_color, name="Arial")
-        cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=wrap)
-        if bg:
-            cell.fill = PatternFill("solid", fgColor=bg)
-        if border_on:
-            cell.border = border
-        return cell
-
-    def insert_image_bytes(img_bytes, anchor_cell, width_px=480, height_px=300):
+    # ── helpers ────────────────────────────────────────────────────────────
+    def insert_image_bytes(img_bytes, anchor_cell, width_px=480, height_px=320):
         img_io = io.BytesIO(img_bytes)
-        img = XLImage(img_io)
-        img.width = width_px
+        img    = XLImage(img_io)
+        img.width  = width_px
         img.height = height_px
         ws.add_image(img, anchor_cell)
 
     def fig_to_bytes(fig):
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor="white")
+        fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor="white")
         buf.seek(0)
         return buf.read()
-
-    # ── TÍTULO ───────────────────────────────────────────────────────────
-    ws.merge_cells("A1:L1")
-    c = ws.cell(row=1, column=1, value="DASHBOARD OPERATIVO — SUPERVISIÓN CANAL TRADICIONAL")
-    c.font = Font(bold=True, size=18, color="FFFFFF", name="Arial")
-    c.fill = PatternFill("solid", fgColor="1a1a1a")
-    c.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 40
-
-    ws.merge_cells("A2:L2")
-    periodo_txt = f"Período: {fecha_desde}  →  {fecha_hasta}  |  Vendedor: {filtro_vendedor}"
-    c2 = ws.cell(row=2, column=1, value=periodo_txt)
-    c2.font = Font(size=12, color="555555", name="Arial")
-    c2.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 22
-
-    # ── KPIs ─────────────────────────────────────────────────────────────
-    ws.merge_cells("A3:L3")
-    c3 = ws.cell(row=3, column=1, value="INDICADORES CLAVE")
-    c3.font = Font(bold=True, size=13, color="FFFFFF", name="Arial")
-    c3.fill = PatternFill("solid", fgColor="4472C4")
-    c3.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[3].height = 26
-
-    kpi_data = [
-        ("EFECTIVIDAD TOTAL (S/)", f"S/ {total_ventas:,.2f}", "7b5ea7"),
-        ("TICKET PROMEDIO (S/)",   f"S/ {ticket_prom_global:.2f}", "4472C4"),
-        ("% CONCRETO VENTA",       f"{pct_concreto:.0f}%", "6a9e4f"),
-        ("TOTAL VISITAS",          str(total_visitas), "FF7F0E"),
-        ("TIEMPO PROM. PDC",       f"{tiempo_prom:.0f} min", "e05252"),
-        ("% CON TERCEROS",         f"{pct_con_terceros:.0f}%", "FFC107"),
-    ]
-    ws.row_dimensions[4].height = 22
-    ws.row_dimensions[5].height = 40
-    ws.row_dimensions[6].height = 8
-
-    for ci, (lbl, val, color) in enumerate(kpi_data, start=1):
-        col_start = (ci - 1) * 2 + 1
-        ws.merge_cells(start_row=4, start_column=col_start, end_row=4, end_column=col_start + 1)
-        c_lbl = ws.cell(row=4, column=col_start, value=lbl)
-        c_lbl.font = Font(bold=True, size=10, color="FFFFFF", name="Arial")
-        c_lbl.fill = PatternFill("solid", fgColor=color)
-        c_lbl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-        ws.merge_cells(start_row=5, start_column=col_start, end_row=5, end_column=col_start + 1)
-        c_val = ws.cell(row=5, column=col_start, value=val)
-        c_val.font = Font(bold=True, size=20, color=color, name="Arial")
-        c_val.alignment = Alignment(horizontal="center", vertical="center")
-        c_val.fill = PatternFill("solid", fgColor="F8F8F8")
-
-    # ── TICKET POR VENDEDOR (tabla) ───────────────────────────────────────
-    row_cur = 7
-    ws.merge_cells(f"A{row_cur}:L{row_cur}")
-    c_tk = ws.cell(row=row_cur, column=1, value="TICKET PROMEDIO POR VENDEDOR Y DÍA")
-    c_tk.font = Font(bold=True, size=13, color="FFFFFF", name="Arial")
-    c_tk.fill = PatternFill("solid", fgColor="4472C4")
-    c_tk.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[row_cur].height = 24
-
-    tk_headers = ["Vendedor", "Fecha", "Ventas del Día (S/)", "Clientes Visitados", "Ticket Promedio (S/)"]
-    for ci, h in enumerate(tk_headers, 1):
-        c = ws.cell(row=row_cur + 1, column=ci, value=h)
-        c.font = Font(bold=True, size=11, color="FFFFFF", name="Arial")
-        c.fill = PatternFill("solid", fgColor="6a9e4f")
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        c.border = border
-        ws.row_dimensions[row_cur + 1].height = 22
-
-    for ri, row_d in ticket_calc.iterrows():
-        r = row_cur + 2 + ri
-        ws.cell(row=r, column=1, value=row_d["Vendedor"]).border = border
-        ws.cell(row=r, column=2, value=row_d["Fecha_str"]).border = border
-        ws.cell(row=r, column=3, value=round(row_d["Ventas_Dia"], 2)).border = border
-        ws.cell(row=r, column=4, value=int(row_d["Clientes_Dia"])).border = border
-        ws.cell(row=r, column=5, value=round(row_d["Ticket_Calculado"], 2)).border = border
-        ws.row_dimensions[r].height = 18
-
-    row_cur = row_cur + 2 + len(ticket_calc) + 1
-
-    # ══════════════════════════════════════════════════════════════
-    # GRÁFICOS — generados con matplotlib y embebidos como imágenes
-    # ══════════════════════════════════════════════════════════════
-
-    IMG_W = 480  # px width for chart images
-    IMG_H = 320  # px height
-    COL_CHART_W = 9   # Excel columns per chart
-    ROW_CHART_H = 20  # Excel row units per chart (~300px)
 
     def section_header(row, text, color="4472C4"):
         ws.merge_cells(f"A{row}:L{row}")
         c = ws.cell(row=row, column=1, value=text)
-        c.font = Font(bold=True, size=13, color="FFFFFF", name="Arial")
-        c.fill = PatternFill("solid", fgColor=color)
+        c.font      = Font(bold=True, size=13, color="FFFFFF", name="Arial")
+        c.fill      = PatternFill("solid", fgColor=color)
         c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[row].height = 24
+        ws.row_dimensions[row].height = 26
         return row + 1
 
-    def reserve_rows(start_row, n_rows, height=15):
-        for r in range(start_row, start_row + n_rows):
+    def reserve_rows(start_row, n, height=15):
+        for r in range(start_row, start_row + n):
             ws.row_dimensions[r].height = height
-        return start_row + n_rows
+        return start_row + n
 
-    # ─── 1. COLOCACIÓN DE EXHIBIDORES ────────────────────────────────────
-    row_cur = section_header(row_cur, "COLOCACIÓN DE EXHIBIDORES", "FF7F0E")
-    chart_start = row_cur
-    row_cur = reserve_rows(row_cur, 22, 15)
+    # ── imagen única ancho completo (columnas A-L) ─────────────────────────
+    IMG_FULL_W = 980   # px — ocupa ~12 columnas
+    IMG_HALF_W = 480   # px — ocupa ~6 columnas
+    IMG_H      = 330   # px altura estándar
+    IMG_H_MAP  = 430   # px mapa más alto
+    IMG_H_WIDE = 330   # px presencia (ancho total)
 
+    def chart_style(ax, title, ylabel="", xlabel=""):
+        ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
+        if ylabel: ax.set_ylabel(ylabel, fontsize=10)
+        if xlabel: ax.set_xlabel(xlabel, fontsize=10)
+        ax.yaxis.grid(True, linestyle="--", alpha=0.45, zorder=0)
+        ax.set_axisbelow(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CABECERA: Título + Período + KPIs
+    # ══════════════════════════════════════════════════════════════════════
+    ws.merge_cells("A1:L1")
+    c = ws.cell(row=1, column=1,
+                value="DASHBOARD OPERATIVO — SUPERVISIÓN CANAL TRADICIONAL")
+    c.font      = Font(bold=True, size=18, color="FFFFFF", name="Arial")
+    c.fill      = PatternFill("solid", fgColor="1a1a1a")
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 42
+
+    ws.merge_cells("A2:L2")
+    c2 = ws.cell(row=2, column=1,
+                 value=f"Período: {fecha_desde}  →  {fecha_hasta}  |  Vendedor: {filtro_vendedor}")
+    c2.font      = Font(size=12, color="555555", name="Arial")
+    c2.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 22
+
+    ws.merge_cells("A3:L3")
+    c3 = ws.cell(row=3, column=1, value="INDICADORES CLAVE")
+    c3.font      = Font(bold=True, size=13, color="FFFFFF", name="Arial")
+    c3.fill      = PatternFill("solid", fgColor="4472C4")
+    c3.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[3].height = 26
+
+    kpi_data = [
+        ("EFECTIVIDAD TOTAL (S/)", f"S/ {total_ventas:,.2f}",      "7b5ea7"),
+        ("TICKET PROMEDIO (S/)",   f"S/ {ticket_prom_global:.2f}", "4472C4"),
+        ("% CONCRETO VENTA",       f"{pct_concreto:.0f}%",         "6a9e4f"),
+        ("TOTAL VISITAS",          str(total_visitas),             "FF7F0E"),
+        ("TIEMPO PROM. PDC",       f"{tiempo_prom:.0f} min",       "e05252"),
+        ("% CON TERCEROS",         f"{pct_con_terceros:.0f}%",     "FFC107"),
+    ]
+    ws.row_dimensions[4].height = 22
+    ws.row_dimensions[5].height = 42
+    ws.row_dimensions[6].height = 6
+
+    for ci, (lbl, val, color) in enumerate(kpi_data, start=1):
+        cs = (ci - 1) * 2 + 1
+        ws.merge_cells(start_row=4, start_column=cs, end_row=4, end_column=cs + 1)
+        cl = ws.cell(row=4, column=cs, value=lbl)
+        cl.font      = Font(bold=True, size=10, color="FFFFFF", name="Arial")
+        cl.fill      = PatternFill("solid", fgColor=color)
+        cl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.merge_cells(start_row=5, start_column=cs, end_row=5, end_column=cs + 1)
+        cv = ws.cell(row=5, column=cs, value=val)
+        cv.font      = Font(bold=True, size=20, color=color, name="Arial")
+        cv.alignment = Alignment(horizontal="center", vertical="center")
+        cv.fill      = PatternFill("solid", fgColor="F8F8F8")
+
+    # ── TICKET TABLE ───────────────────────────────────────────────────────
+    row_cur = 7
+    ws.merge_cells(f"A{row_cur}:L{row_cur}")
+    ctk = ws.cell(row=row_cur, column=1, value="TICKET PROMEDIO POR VENDEDOR Y DÍA")
+    ctk.font      = Font(bold=True, size=13, color="FFFFFF", name="Arial")
+    ctk.fill      = PatternFill("solid", fgColor="4472C4")
+    ctk.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[row_cur].height = 24
+
+    for ci, h in enumerate(["Vendedor", "Fecha", "Ventas del Día (S/)",
+                             "Clientes Visitados", "Ticket Promedio (S/)"], 1):
+        c = ws.cell(row=row_cur + 1, column=ci, value=h)
+        c.font      = Font(bold=True, size=11, color="FFFFFF", name="Arial")
+        c.fill      = PatternFill("solid", fgColor="6a9e4f")
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        c.border    = border
+        ws.row_dimensions[row_cur + 1].height = 22
+
+    alt_fill = PatternFill("solid", fgColor="F5F5F5")
+    for ri, row_d in ticket_calc.iterrows():
+        r = row_cur + 2 + ri
+        for ci2, val in enumerate([row_d["Vendedor"], row_d["Fecha_str"],
+                                    round(row_d["Ventas_Dia"], 2),
+                                    int(row_d["Clientes_Dia"]),
+                                    round(row_d["Ticket_Calculado"], 2)], 1):
+            c = ws.cell(row=r, column=ci2, value=val)
+            c.border    = border
+            c.font      = Font(size=10, name="Arial")
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            if ri % 2 == 1:
+                c.fill = alt_fill
+        ws.row_dimensions[r].height = 18
+
+    row_cur = row_cur + 2 + len(ticket_calc) + 1
+
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICO 1 — MAPA DE VISITAS (ancho completo)
+    # ══════════════════════════════════════════════════════════════════════
+    if "Latitud" in df_f.columns and "Longitud" in df_f.columns:
+        df_map = df_f.copy()
+        df_map["Latitud"]  = pd.to_numeric(df_map["Latitud"],  errors="coerce")
+        df_map["Longitud"] = pd.to_numeric(df_map["Longitud"], errors="coerce")
+        df_map = df_map.dropna(subset=["Latitud", "Longitud"])
+        if not df_map.empty:
+            row_cur = section_header(row_cur, "📍 MAPA DE VISITAS — DISTRIBUCIÓN GEOGRÁFICA", "4472C4")
+            cs_map  = row_cur
+            row_cur = reserve_rows(row_cur, 30, 15)
+            zonas_u = df_map["Zona"].dropna().unique().tolist() if "Zona" in df_map.columns else ["Sin Zona"]
+            zc_map  = {z: PALETTE[i % len(PALETTE)] for i, z in enumerate(zonas_u)}
+            fig_m, ax_m = plt.subplots(figsize=(14, 6))
+            for zona in zonas_u:
+                grp = df_map[df_map["Zona"] == zona] if "Zona" in df_map.columns else df_map
+                ax_m.scatter(grp["Longitud"], grp["Latitud"],
+                             c=zc_map.get(zona, "#888"), s=100, label=zona,
+                             alpha=0.88, edgecolors="white", linewidths=0.8, zorder=5)
+            for _, rm in df_map.iterrows():
+                ax_m.annotate(str(rm.get("Nombre_Cliente", ""))[:20],
+                              (rm["Longitud"], rm["Latitud"]),
+                              textcoords="offset points", xytext=(6, 4),
+                              fontsize=7, alpha=0.8)
+            chart_style(ax_m, "MAPA DE VISITAS — DISTRIBUCIÓN GEOGRÁFICA",
+                        ylabel="Latitud", xlabel="Longitud")
+            ax_m.legend(title="Zona", fontsize=9, title_fontsize=10,
+                        loc="upper right", framealpha=0.9, edgecolor="#ccc")
+            ax_m.grid(True, linestyle="--", alpha=0.35)
+            plt.tight_layout()
+            insert_image_bytes(fig_to_bytes(fig_m), f"A{cs_map}", IMG_FULL_W, IMG_H_MAP)
+            plt.close(fig_m)
+            row_cur += 1
+
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICO 2+3 — GIRO DE NEGOCIO (pie) | EFECTIVIDAD (barras h)
+    # ══════════════════════════════════════════════════════════════════════
+    row_cur = section_header(row_cur, "GIRO DE NEGOCIO  |  EFECTIVIDAD DE VISITAS", "4472C4")
+    cs_ge   = row_cur
+    row_cur = reserve_rows(row_cur, 24, 15)
+
+    # ── Giro de Negocio (pie) ─────────────────────────────────────────────
+    if "Giro_Negocio" in df_f.columns:
+        df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
+        df_giro.columns = ["Giro", "Visitas"]
+        df_giro["Giro_Short"] = df_giro["Giro"].str.replace(r"^\d+ - ", "", regex=True)
+        total_g = df_giro["Visitas"].sum()
+
+        fig_gi, ax_gi = plt.subplots(figsize=(8, 5.5))
+        wc = [PALETTE[i % len(PALETTE)] for i in range(len(df_giro))]
+        wedges, _, autos = ax_gi.pie(
+            df_giro["Visitas"], labels=None,
+            autopct=lambda p: f"{p:.0f}%\n({int(round(p * total_g / 100))})",
+            colors=wc, startangle=90, pctdistance=0.72,
+            textprops={"fontsize": 9},
+        )
+        for at in autos:
+            at.set_fontweight("bold")
+        ax_gi.legend(wedges,
+                     [f"{g}  ({v})" for g, v in zip(df_giro["Giro_Short"], df_giro["Visitas"])],
+                     loc="center left", bbox_to_anchor=(1, 0.5), fontsize=8)
+        ax_gi.set_title("GIROS DE NEGOCIO", fontsize=13, fontweight="bold", pad=10)
+        plt.tight_layout()
+        insert_image_bytes(fig_to_bytes(fig_gi), f"A{cs_ge}", IMG_HALF_W, IMG_H)
+        plt.close(fig_gi)
+
+    # ── Efectividad (barras horizontales) ─────────────────────────────────
+    if "Concreto" in df_f.columns:
+        df_ef  = df_f["Concreto"].value_counts().reset_index()
+        df_ef.columns = ["Estado", "Cantidad"]
+        total_ef = df_ef["Cantidad"].sum()
+
+        fig_ef, ax_ef = plt.subplots(figsize=(8, 5.5))
+        col_ef = ["#7b5ea7" if e == "CONCRETO" else "#e05252" for e in df_ef["Estado"]]
+        bars_ef = ax_ef.barh(df_ef["Estado"], df_ef["Cantidad"],
+                             color=col_ef, edgecolor="white", height=0.55)
+        max_ef = df_ef["Cantidad"].max() if not df_ef.empty else 1
+        for bar, cnt in zip(bars_ef, df_ef["Cantidad"]):
+            pct = round(cnt / total_ef * 100) if total_ef > 0 else 0
+            ax_ef.text(bar.get_width() + max_ef * 0.03,
+                       bar.get_y() + bar.get_height() / 2,
+                       f"{cnt}\n({pct}%)", va="center", ha="left",
+                       fontsize=11, fontweight="bold")
+        chart_style(ax_ef, "EFECTIVIDAD DE VISITAS", xlabel="Cantidad de Visitas")
+        ax_ef.set_xlim(0, max_ef * 1.45)
+        ax_ef.xaxis.grid(True, linestyle="--", alpha=0.45)
+        plt.tight_layout()
+        insert_image_bytes(fig_to_bytes(fig_ef), f"G{cs_ge}", IMG_HALF_W, IMG_H)
+        plt.close(fig_ef)
+
+    row_cur += 1
+
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICO 4+5 — COLOCACIÓN DE EXHIBIDORES | TIPO DE NEGOCIO POR EXHIBIDOR
+    # ══════════════════════════════════════════════════════════════════════
     exhib_cols_dict = {
         "LEGOS_GC": "LEGOS G&C", "TOBOGAN_RITZ_OREO": "TOBOGÁN Ritz/Oreo",
         "EXHIB_KIWI": "EXHIB KIWI", "RITRAZ": "RITRAZ",
         "MEGA_KIWI": "MEGA KIWI", "EXHIBIDOR_OTROS": "OTROS",
     }
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
+    row_cur = section_header(row_cur, "COLOCACIÓN DE EXHIBIDORES  |  TIPO DE NEGOCIO POR EXHIBIDOR", "FF7F0E")
+    cs_ex   = row_cur
+    row_cur = reserve_rows(row_cur, 24, 15)
+
+    # ── Colocación de Exhibidores ─────────────────────────────────────────
     labels_e = [d["Exhibidor"] for d in data_exhib]
-    vals_e   = [d["Cantidad"] for d in data_exhib]
-    pcts_e   = [d["Pct"] for d in data_exhib]
-    colors_e = [PALETTE[i % len(PALETTE)] for i in range(len(labels_e))]
-    bars = ax.bar(labels_e, vals_e, color=colors_e, edgecolor="white", linewidth=1.2, zorder=3)
-    for bar, cnt, pct in zip(bars, vals_e, pcts_e):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(vals_e) * 0.02,
-                f"{cnt}\n({pct}%)", ha="center", va="bottom", fontsize=10, fontweight="bold")
-    ax.set_title("COLOCACIÓN DE EXHIBIDORES", fontsize=14, fontweight="bold", pad=12)
-    ax.set_ylabel("Cantidad de Visitas", fontsize=11)
-    ax.tick_params(axis="x", labelsize=10)
-    ax.set_ylim(0, max(vals_e) * 1.35 if max(vals_e) > 0 else 10)
-    ax.yaxis.grid(True, linestyle="--", alpha=0.5)
-    ax.set_axisbelow(True)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    plt.xticks(rotation=20, ha="right")
+    vals_e   = [d["Cantidad"]  for d in data_exhib]
+    pcts_e   = [d["Pct"]       for d in data_exhib]
+    max_e    = max(vals_e) if vals_e else 1
+
+    fig_ex, ax_ex = plt.subplots(figsize=(10, 5))
+    bars_ex = ax_ex.bar(labels_e, vals_e,
+                        color=[PALETTE[i % len(PALETTE)] for i in range(len(labels_e))],
+                        edgecolor="white", linewidth=1.2, zorder=3)
+    for bar, cnt, pct in zip(bars_ex, vals_e, pcts_e):
+        ax_ex.text(bar.get_x() + bar.get_width() / 2,
+                   bar.get_height() + max_e * 0.025,
+                   f"{cnt}\n({pct}%)",
+                   ha="center", va="bottom", fontsize=10, fontweight="bold")
+    chart_style(ax_ex, "COLOCACIÓN DE EXHIBIDORES", ylabel="Cantidad de Visitas")
+    ax_ex.set_ylim(0, max_e * 1.4)
+    plt.xticks(rotation=22, ha="right", fontsize=9)
     plt.tight_layout()
-    insert_image_bytes(fig_to_bytes(fig), f"A{chart_start}", IMG_W, IMG_H)
-    plt.close(fig)
+    insert_image_bytes(fig_to_bytes(fig_ex), f"A{cs_ex}", IMG_HALF_W, IMG_H)
+    plt.close(fig_ex)
 
-    # ─── 2. GIROS DE NEGOCIO (pie) ───────────────────────────────────────
-    if "Giro_Negocio" in df_f.columns:
-        df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
-        df_giro.columns = ["Giro", "Visitas"]
-        df_giro["Giro_Short"] = df_giro["Giro"].str.replace(r"^\d+ - ", "", regex=True)
-        total_giro = df_giro["Visitas"].sum()
+    # ── Tipo de Negocio por Exhibidor
+    # Formato imagen 2: eje X = Giro de Negocio, barras agrupadas por Exhibidor
+    # Cada barra = un exhibidor, color diferente por exhibidor
+    # ─────────────────────────────────────────────────────────────────────
+    exhib_giro_data = []
+    for col_ex2, label_ex2 in exhib_cols_dict.items():
+        if col_ex2 in df_f.columns and "Giro_Negocio" in df_f.columns:
+            df_ex_s = df_f[pd.to_numeric(df_f[col_ex2], errors="coerce").fillna(0) > 0].copy()
+            if df_ex_s.empty:
+                continue
+            df_ex_s["Giro_Short"] = (df_ex_s["Giro_Negocio"]
+                                     .str.replace(r"^\d+ - ", "", regex=True)
+                                     .str.strip())
+            for giro, grp in df_ex_s.groupby("Giro_Short"):
+                exhib_giro_data.append({"Exhibidor": label_ex2,
+                                        "Giro": giro,
+                                        "Cantidad": len(grp)})
 
-        fig2, ax2 = plt.subplots(figsize=(8, 5))
-        wedge_colors = [PALETTE[i % len(PALETTE)] for i in range(len(df_giro))]
-        wedges, texts, autotexts = ax2.pie(
-            df_giro["Visitas"],
-            labels=None,
-            autopct=lambda p: f"{p:.0f}%\n({int(round(p*total_giro/100))})",
-            colors=wedge_colors,
-            startangle=90,
-            pctdistance=0.75,
-            textprops={"fontsize": 10},
-        )
-        for at in autotexts:
-            at.set_fontsize(9)
-            at.set_fontweight("bold")
-        legend_labels = [f"{g} ({v})" for g, v in zip(df_giro["Giro_Short"], df_giro["Visitas"])]
-        ax2.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9)
-        ax2.set_title("GIROS DE NEGOCIO", fontsize=14, fontweight="bold", pad=12)
+    if exhib_giro_data:
+        df_eg       = pd.DataFrame(exhib_giro_data)
+        giros_u     = sorted(df_eg["Giro"].unique().tolist())
+        exhibs_u    = list(exhib_cols_dict.values())
+        # solo exhibidores que tienen datos
+        exhibs_u    = [e for e in exhibs_u if e in df_eg["Exhibidor"].unique()]
+        n_giros     = len(giros_u)
+        n_exhibs    = len(exhibs_u)
+        color_exhib = {e: PALETTE[i % len(PALETTE)] for i, e in enumerate(exhibs_u)}
+
+        x_pos  = np.arange(n_giros)
+        width  = 0.8 / max(n_exhibs, 1)
+
+        fig_eg2, ax_eg2 = plt.subplots(figsize=(max(10, n_giros * 2.2), 5))
+
+        for ei, exhib in enumerate(exhibs_u):
+            vals_eg = []
+            for giro in giros_u:
+                sub = df_eg[(df_eg["Exhibidor"] == exhib) & (df_eg["Giro"] == giro)]
+                vals_eg.append(int(sub["Cantidad"].sum()) if not sub.empty else 0)
+
+            offset  = (ei - n_exhibs / 2 + 0.5) * width
+            bars_eg = ax_eg2.bar(x_pos + offset, vals_eg,
+                                 width * 0.92,
+                                 label=exhib,
+                                 color=color_exhib[exhib],
+                                 edgecolor="white", linewidth=0.8, zorder=3)
+            max_eg_val = max(vals_eg) if vals_eg else 1
+            for bar, cnt in zip(bars_eg, vals_eg):
+                if cnt > 0:
+                    pct_eg = round(cnt / total_visitas * 100, 1)
+                    ax_eg2.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + max_eg_val * 0.04,
+                        f"{cnt}\n({pct_eg}%)",
+                        ha="center", va="bottom", fontsize=8, fontweight="bold"
+                    )
+
+        ax_eg2.set_xticks(x_pos)
+        ax_eg2.set_xticklabels(giros_u, fontsize=9, rotation=15, ha="right")
+        chart_style(ax_eg2, "COLOCACIÓN DE EXHIBIDORES POR GIRO DE NEGOCIO",
+                    ylabel="Cantidad de Visitas")
+        all_vals_eg = [v for row_d in exhib_giro_data for v in [row_d["Cantidad"]]]
+        ax_eg2.set_ylim(0, (max(all_vals_eg) if all_vals_eg else 1) * 1.5)
+        ax_eg2.legend(title="Exhibidor", fontsize=8, title_fontsize=9,
+                      loc="upper right", ncol=2)
         plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig2), f"G{chart_start}", IMG_W, IMG_H)
-        plt.close(fig2)
+        insert_image_bytes(fig_to_bytes(fig_eg2), f"G{cs_ex}", IMG_HALF_W, IMG_H)
+        plt.close(fig_eg2)
 
-    row_cur += 1  # spacer
+    row_cur += 1
 
-    # ─── 3. COLOCACIÓN DE TERCEROS (pie por giro) ────────────────────────
-    row_cur = section_header(row_cur, "COLOCACIÓN DE TERCEROS", "7b5ea7")
-    chart_start2 = row_cur
-    row_cur = reserve_rows(row_cur, 22, 15)
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICO 6+7 — COLOCACIÓN DE TERCEROS (pie) | MARCAS DE TERCEROS
+    # ══════════════════════════════════════════════════════════════════════
+    row_cur = section_header(row_cur, "COLOCACIÓN DE TERCEROS  |  MARCAS DE COMPETENCIA", "7b5ea7")
+    cs_tc   = row_cur
+    row_cur = reserve_rows(row_cur, 24, 15)
 
+    # ── Terceros (pie) ────────────────────────────────────────────────────
     if "Colocacion_Terceros" in df_f.columns and "Giro_Negocio" in df_f.columns:
-        df_terc_giro = df_f.copy()
-        df_terc_giro["Giro_Short"] = df_terc_giro["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True).str.upper()
-        df_con = df_terc_giro[df_terc_giro["Colocacion_Terceros"] == "Sí"].groupby("Giro_Short").size().reset_index(name="N")
-        sin_n = int((df_terc_giro["Colocacion_Terceros"] != "Sí").sum())
-        labels_pie = df_con["Giro_Short"].tolist() + ["SIN COLOCACION"]
-        values_pie = df_con["N"].tolist() + [sin_n]
-        total_pie  = sum(values_pie)
+        df_tg = df_f.copy()
+        df_tg["Giro_Short"] = (df_tg["Giro_Negocio"]
+                               .str.replace(r"^\d+ - ", "", regex=True).str.upper())
+        df_con_t = (df_tg[df_tg["Colocacion_Terceros"] == "Sí"]
+                    .groupby("Giro_Short").size().reset_index(name="N"))
+        sin_n    = int((df_tg["Colocacion_Terceros"] != "Sí").sum())
+        lbl_pie  = df_con_t["Giro_Short"].tolist() + ["SIN COLOCACION"]
+        val_pie  = df_con_t["N"].tolist() + [sin_n]
+        tot_pie  = sum(val_pie)
+        col_pie  = [PALETTE[i % len(PALETTE)] for i in range(len(df_con_t))] + ["#4CAF50"]
 
-        fig3, ax3 = plt.subplots(figsize=(8, 5))
-        colors_pie = [PALETTE[i % len(PALETTE)] for i in range(len(df_con))] + ["#4CAF50"]
-        wedges3, texts3, autotexts3 = ax3.pie(
-            values_pie, labels=None,
-            autopct=lambda p: f"{p:.0f}%\n({int(round(p*total_pie/100))})",
-            colors=colors_pie, startangle=90, pctdistance=0.75,
-            textprops={"fontsize": 10},
+        fig_tc, ax_tc = plt.subplots(figsize=(8, 5.5))
+        wedges_t, _, autos_t = ax_tc.pie(
+            val_pie, labels=None,
+            autopct=lambda p: f"{p:.0f}%\n({int(round(p * tot_pie / 100))})",
+            colors=col_pie, startangle=90, pctdistance=0.72,
+            textprops={"fontsize": 9},
         )
-        for at in autotexts3:
-            at.set_fontsize(9)
+        for at in autos_t:
             at.set_fontweight("bold")
-        legend_labels3 = [f"{l} ({v})" for l, v in zip(labels_pie, values_pie)]
-        ax3.legend(wedges3, legend_labels3, loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9)
-        ax3.set_title("COLOCACIÓN DE TERCEROS", fontsize=14, fontweight="bold", pad=12)
+        ax_tc.legend(wedges_t,
+                     [f"{l}  ({v})" for l, v in zip(lbl_pie, val_pie)],
+                     loc="center left", bbox_to_anchor=(1, 0.5), fontsize=8)
+        ax_tc.set_title("COLOCACIÓN DE TERCEROS", fontsize=13, fontweight="bold", pad=10)
         plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig3), f"A{chart_start2}", IMG_W, IMG_H)
-        plt.close(fig3)
+        insert_image_bytes(fig_to_bytes(fig_tc), f"A{cs_tc}", IMG_HALF_W, IMG_H)
+        plt.close(fig_tc)
 
-    # ─── 4. MARCAS DE TERCEROS (barras horizontales) ─────────────────────
+    # ── Marcas de Terceros (barras horizontales) ──────────────────────────
     if "Marca_Tercero" in df_f.columns:
-        from collections import Counter
-        df_marcas_raw = df_f[
+        df_mr = df_f[
             (df_f["Colocacion_Terceros"] == "Sí") &
             (df_f["Marca_Tercero"].astype(str).str.strip().str.lower() != "nan") &
             (df_f["Marca_Tercero"].astype(str).str.strip() != "")
         ]["Marca_Tercero"].copy()
-        todas_marcas = []
-        for val in df_marcas_raw:
-            for m in str(val).split(","):
-                m_clean = m.strip().upper()
-                if m_clean and m_clean != "NAN":
-                    todas_marcas.append(m_clean)
+        todas_m = []
+        for v in df_mr:
+            for m in str(v).split(","):
+                mc = m.strip().upper()
+                if mc and mc != "NAN":
+                    todas_m.append(mc)
+        if todas_m:
+            cteo   = Counter(todas_m)
+            df_mrc = pd.DataFrame(cteo.items(),
+                                  columns=["Marca", "Cantidad"]).sort_values("Cantidad")
+            tot_m  = df_mrc["Cantidad"].sum()
+            df_mrc["Pct"] = (df_mrc["Cantidad"] / tot_m * 100).round(1)
 
-        if todas_marcas:
-            conteo = Counter(todas_marcas)
-            df_marcas = pd.DataFrame(conteo.items(), columns=["Marca", "Cantidad"]).sort_values("Cantidad")
-            total_m = df_marcas["Cantidad"].sum()
-            df_marcas["Pct"] = (df_marcas["Cantidad"] / total_m * 100).round(1)
-
-            fig4, ax4 = plt.subplots(figsize=(10, max(4, len(df_marcas) * 0.55 + 1.5)))
-            colors_m = [PALETTE[i % len(PALETTE)] for i in range(len(df_marcas))]
-            bars4 = ax4.barh(df_marcas["Marca"], df_marcas["Cantidad"], color=colors_m, edgecolor="white")
-            for bar, cnt, pct in zip(bars4, df_marcas["Cantidad"], df_marcas["Pct"]):
-                ax4.text(bar.get_width() + df_marcas["Cantidad"].max() * 0.02, bar.get_y() + bar.get_height() / 2,
-                         f"{cnt}  ({pct}%)", va="center", ha="left", fontsize=10, fontweight="bold")
-            ax4.set_title("MARCAS DE COMPETENCIA EN PUNTO DE VENTA", fontsize=14, fontweight="bold", pad=12)
-            ax4.set_xlabel("Número de Visitas con Presencia", fontsize=11)
-            ax4.set_xlim(0, df_marcas["Cantidad"].max() * 1.35)
-            ax4.xaxis.grid(True, linestyle="--", alpha=0.5)
-            ax4.set_axisbelow(True)
-            ax4.spines["top"].set_visible(False)
-            ax4.spines["right"].set_visible(False)
+            fig_mr, ax_mr = plt.subplots(
+                figsize=(9, max(3.5, len(df_mrc) * 0.55 + 1.5)))
+            bars_mr = ax_mr.barh(
+                df_mrc["Marca"], df_mrc["Cantidad"],
+                color=[PALETTE[i % len(PALETTE)] for i in range(len(df_mrc))],
+                edgecolor="white")
+            max_mr = df_mrc["Cantidad"].max() if not df_mrc.empty else 1
+            for bar, cnt, pct in zip(bars_mr, df_mrc["Cantidad"], df_mrc["Pct"]):
+                ax_mr.text(bar.get_width() + max_mr * 0.03,
+                           bar.get_y() + bar.get_height() / 2,
+                           f"{cnt}\n({pct}%)",
+                           va="center", ha="left", fontsize=9, fontweight="bold")
+            chart_style(ax_mr, "MARCAS DE COMPETENCIA EN PDV",
+                        xlabel="Número de Visitas con Presencia")
+            ax_mr.set_xlim(0, max_mr * 1.45)
+            ax_mr.xaxis.grid(True, linestyle="--", alpha=0.45)
             plt.tight_layout()
-
-            insert_image_bytes(fig_to_bytes(fig4), f"G{chart_start2}", IMG_W, int(max(4, len(df_marcas) * 0.55 + 1.5) * 70))
-            plt.close(fig4)
+            insert_image_bytes(fig_to_bytes(fig_mr), f"G{cs_tc}",
+                               IMG_HALF_W,
+                               int(max(3.5, len(df_mrc) * 0.55 + 1.5) * 72))
+            plt.close(fig_mr)
 
     row_cur += 1
 
-    # ─── 5. CONTAMINACIÓN DE EXHIBIDORES ─────────────────────────────────
-    row_cur = section_header(row_cur, "CONTAMINACIÓN DE EXHIBIDORES", "e05252")
-    chart_start3 = row_cur
-    row_cur = reserve_rows(row_cur, 22, 15)
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICO 8+9 — CONTAMINACIÓN | VISIBILIDAD
+    # ══════════════════════════════════════════════════════════════════════
+    row_cur = section_header(row_cur, "CONTAMINACIÓN DE EXHIBIDORES  |  VISIBILIDAD POR EXHIBIDOR", "e05252")
+    cs_cv   = row_cur
+    row_cur = reserve_rows(row_cur, 24, 15)
 
-    cont_exhibs = [("CONT_LEGOS_GC", "LEGOS G&C"), ("CONT_TOBOGAN_RITZ_OREO", "TOBOGÁN Ritz/Oreo"), ("CONT_EXHIB_KIWI", "EXHIB KIWI")]
-    cont_labels, cont_si_list, cont_no_list, pct_si_list, pct_no_list = [], [], [], [], []
-    for col_c, label_c in cont_exhibs:
+    # ── Contaminación ──────────────────────────────────────────────────────
+    cont_info = [("CONT_LEGOS_GC", "LEGOS G&C"),
+                 ("CONT_TOBOGAN_RITZ_OREO", "TOBOGÁN Ritz/Oreo"),
+                 ("CONT_EXHIB_KIWI", "EXHIB KIWI")]
+    c_lbls, c_si, c_no, p_si, p_no = [], [], [], [], []
+    for col_c, lbl_c in cont_info:
         if col_c in df_f.columns:
-            serie_c = pd.to_numeric(df_f[col_c], errors="coerce").fillna(0)
-            si = int(serie_c.sum())
-            no = len(serie_c) - si
-            psi = round(si / len(serie_c) * 100, 1) if len(serie_c) > 0 else 0
-            pno = round(no / len(serie_c) * 100, 1) if len(serie_c) > 0 else 0
-            cont_labels.append(label_c)
-            cont_si_list.append(si)
-            cont_no_list.append(no)
-            pct_si_list.append(psi)
-            pct_no_list.append(pno)
+            sc  = pd.to_numeric(df_f[col_c], errors="coerce").fillna(0)
+            si  = int(sc.sum())
+            no  = len(sc) - si
+            c_lbls.append(lbl_c); c_si.append(si); c_no.append(no)
+            p_si.append(round(si / len(sc) * 100, 1) if len(sc) else 0)
+            p_no.append(round(no / len(sc) * 100, 1) if len(sc) else 0)
 
-    if cont_labels:
-        x = np.arange(len(cont_labels))
-        width = 0.35
-        fig5, ax5 = plt.subplots(figsize=(9, 4.5))
-        b1 = ax5.bar(x - width/2, cont_si_list, width, label="Contaminado", color="#e05252", edgecolor="white")
-        b2 = ax5.bar(x + width/2, cont_no_list, width, label="Limpio",       color="#4CAF50", edgecolor="white")
-        max_val = max(cont_si_list + cont_no_list) if cont_si_list + cont_no_list else 1
-        for bar, cnt, pct in zip(b1, cont_si_list, pct_si_list):
+    if c_lbls:
+        xc   = np.arange(len(c_lbls))
+        wc2  = 0.35
+        maxc = max(c_si + c_no) if c_si + c_no else 1
+        fig_ct, ax_ct = plt.subplots(figsize=(9, 5))
+        b1 = ax_ct.bar(xc - wc2/2, c_si, wc2,
+                       label="Contaminado", color="#e05252", edgecolor="white")
+        b2 = ax_ct.bar(xc + wc2/2, c_no, wc2,
+                       label="Limpio",      color="#4CAF50", edgecolor="white")
+        for bar, cnt, pct in zip(b1, c_si, p_si):
             if cnt > 0:
-                ax5.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max_val*0.02,
-                         f"{cnt}\n({pct}%)", ha="center", va="bottom", fontsize=10, fontweight="bold")
-        for bar, cnt, pct in zip(b2, cont_no_list, pct_no_list):
+                ax_ct.text(bar.get_x() + bar.get_width()/2,
+                           bar.get_height() + maxc * 0.025,
+                           f"{cnt}\n({pct}%)",
+                           ha="center", va="bottom", fontsize=10, fontweight="bold")
+        for bar, cnt, pct in zip(b2, c_no, p_no):
             if cnt > 0:
-                ax5.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max_val*0.02,
-                         f"{cnt}\n({pct}%)", ha="center", va="bottom", fontsize=10, fontweight="bold")
-        ax5.set_xticks(x)
-        ax5.set_xticklabels(cont_labels, fontsize=11)
-        ax5.set_title("CONTAMINACIÓN DE EXHIBIDORES", fontsize=14, fontweight="bold", pad=12)
-        ax5.set_ylabel("Cantidad de Visitas", fontsize=11)
-        ax5.set_ylim(0, max_val * 1.4)
-        ax5.legend(fontsize=11)
-        ax5.yaxis.grid(True, linestyle="--", alpha=0.5)
-        ax5.set_axisbelow(True)
-        ax5.spines["top"].set_visible(False)
-        ax5.spines["right"].set_visible(False)
+                ax_ct.text(bar.get_x() + bar.get_width()/2,
+                           bar.get_height() + maxc * 0.025,
+                           f"{cnt}\n({pct}%)",
+                           ha="center", va="bottom", fontsize=10, fontweight="bold")
+        ax_ct.set_xticks(xc)
+        ax_ct.set_xticklabels(c_lbls, fontsize=10)
+        chart_style(ax_ct, "CONTAMINACIÓN DE EXHIBIDORES",
+                    ylabel="Cantidad de Visitas")
+        ax_ct.set_ylim(0, maxc * 1.45)
+        ax_ct.legend(fontsize=10)
         plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig5), f"A{chart_start3}", IMG_W, IMG_H)
-        plt.close(fig5)
+        insert_image_bytes(fig_to_bytes(fig_ct), f"A{cs_cv}", IMG_HALF_W, IMG_H)
+        plt.close(fig_ct)
 
-    # ─── 6. TIPO DE NEGOCIO POR EXHIBIDOR (igual al gráfico 3 del dashboard) ─
-    exhib_giro_data = []
-    for col_ex, label_ex in exhib_cols_dict.items():
-        if col_ex in df_f.columns and "Giro_Negocio" in df_f.columns:
-            df_ex_sub = df_f[pd.to_numeric(df_f[col_ex], errors="coerce").fillna(0) > 0].copy()
-            if df_ex_sub.empty:
-                continue
-            df_ex_sub["Giro_Short"] = df_ex_sub["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True).str.upper()
-            for giro, grp in df_ex_sub.groupby("Giro_Short"):
-                exhib_giro_data.append({"Exhibidor": label_ex, "Giro": giro, "Cantidad": len(grp)})
-
-    if exhib_giro_data:
-        df_eg = pd.DataFrame(exhib_giro_data)
-        giros_unicos = sorted(df_eg["Giro"].unique().tolist())
-        color_map_eg = {g: PALETTE[i % len(PALETTE)] for i, g in enumerate(giros_unicos)}
-        pivot_eg = df_eg.pivot_table(index="Exhibidor", columns="Giro", values="Cantidad", fill_value=0)
-
-        fig6, ax6 = plt.subplots(figsize=(10, 4.5))
-        bottom = np.zeros(len(pivot_eg))
-        bars_all = []
-        for giro in giros_unicos:
-            if giro in pivot_eg.columns:
-                vals_g = pivot_eg[giro].values
-                b = ax6.bar(pivot_eg.index, vals_g, bottom=bottom, label=giro,
-                            color=color_map_eg[giro], edgecolor="white", linewidth=0.8)
-                for rect, val, bot in zip(b, vals_g, bottom):
-                    if val > 0:
-                        ax6.text(rect.get_x() + rect.get_width()/2, bot + val/2,
-                                 str(int(val)), ha="center", va="center", fontsize=9,
-                                 fontweight="bold", color="white")
-                bottom += vals_g
-                bars_all.append(b)
-
-        # Añadir total encima de cada barra
-        totals = pivot_eg.sum(axis=1)
-        for xi, (exhib, total_val) in enumerate(totals.items()):
-            pct_e = round(total_val / total_visitas * 100, 1) if total_visitas > 0 else 0
-            ax6.text(xi, total_val + totals.max() * 0.02, f"{int(total_val)}\n({pct_e}%)",
-                     ha="center", va="bottom", fontsize=9, fontweight="bold")
-
-        ax6.set_title("TIPO DE NEGOCIO POR EXHIBIDOR COLOCADO", fontsize=14, fontweight="bold", pad=12)
-        ax6.set_ylabel("Cantidad", fontsize=11)
-        ax6.set_ylim(0, totals.max() * 1.35 if not totals.empty else 10)
-        ax6.tick_params(axis="x", labelsize=10)
-        ax6.legend(title="Giro de Negocio", fontsize=9, title_fontsize=10, loc="upper right")
-        ax6.yaxis.grid(True, linestyle="--", alpha=0.4)
-        ax6.set_axisbelow(True)
-        ax6.spines["top"].set_visible(False)
-        ax6.spines["right"].set_visible(False)
-        plt.xticks(rotation=20, ha="right")
-        plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig6), f"G{chart_start3}", IMG_W, IMG_H)
-        plt.close(fig6)
-
-    row_cur += 1
-
-    # ─── 7. VISIBILIDAD POR EXHIBIDOR ────────────────────────────────────
-    row_cur = section_header(row_cur, "VISIBILIDAD POR EXHIBIDOR", "4472C4")
-    chart_start4 = row_cur
-    row_cur = reserve_rows(row_cur, 22, 15)
-
-    vis_cols = [
-        ("Visibilidad_Legos",   "LEGOS G&C"),
-        ("Visibilidad_Tobogan", "TOBOGÁN Ritz/Oreo"),
-        ("Visibilidad_Kiwi",    "EXHIB KIWI"),
-        ("Visibilidad_Otros",   "OTROS"),
-    ]
-    vis_alta, vis_media, vis_baja, vis_labels_v = [], [], [], []
-    for col_v, label_v in vis_cols:
+    # ── Visibilidad ────────────────────────────────────────────────────────
+    vis_info = [("Visibilidad_Legos",   "LEGOS G&C"),
+                ("Visibilidad_Tobogan", "TOBOGÁN Ritz/Oreo"),
+                ("Visibilidad_Kiwi",    "EXHIB KIWI"),
+                ("Visibilidad_Otros",   "OTROS")]
+    v_alta, v_med, v_baj, v_lbls = [], [], [], []
+    for col_v, lbl_v in vis_info:
         if col_v in df_f.columns:
-            serie_v = pd.to_numeric(df_f[col_v], errors="coerce").fillna(0)
-            alta  = int((serie_v == 1).sum())
-            media = int((serie_v == 2).sum())
-            baja  = int((serie_v == 3).sum())
-            vis_alta.append(alta)
-            vis_media.append(media)
-            vis_baja.append(baja)
-            vis_labels_v.append(label_v)
+            sv = pd.to_numeric(df_f[col_v], errors="coerce").fillna(0)
+            v_alta.append(int((sv == 1).sum()))
+            v_med.append(int((sv == 2).sum()))
+            v_baj.append(int((sv == 3).sum()))
+            v_lbls.append(lbl_v)
 
-    if vis_labels_v:
-        x_v = np.arange(len(vis_labels_v))
-        w   = 0.25
-        max_vis = max(vis_alta + vis_media + vis_baja) if vis_alta + vis_media + vis_baja else 1
-        fig7, ax7 = plt.subplots(figsize=(10, 4.5))
-        ba = ax7.bar(x_v - w, vis_alta,  w, label="Alta",  color="#4CAF50", edgecolor="white")
-        bm = ax7.bar(x_v,     vis_media, w, label="Media", color="#FFC107", edgecolor="white")
-        bb = ax7.bar(x_v + w, vis_baja,  w, label="Baja",  color="#e05252", edgecolor="white")
-        for bars_v, data_v in [(ba, vis_alta), (bm, vis_media), (bb, vis_baja)]:
+    if v_lbls:
+        xv   = np.arange(len(v_lbls))
+        wv   = 0.25
+        maxv = max(v_alta + v_med + v_baj) if v_alta + v_med + v_baj else 1
+        fig_vi, ax_vi = plt.subplots(figsize=(10, 5))
+        ba = ax_vi.bar(xv - wv, v_alta, wv, label="Alta",  color="#4CAF50", edgecolor="white")
+        bm = ax_vi.bar(xv,      v_med,  wv, label="Media", color="#FFC107", edgecolor="white")
+        bb = ax_vi.bar(xv + wv, v_baj,  wv, label="Baja",  color="#e05252", edgecolor="white")
+        for bars_v, data_v in [(ba, v_alta), (bm, v_med), (bb, v_baj)]:
             for bar, cnt in zip(bars_v, data_v):
-                pct_v = round(cnt / total_visitas * 100, 1) if total_visitas > 0 else 0
                 if cnt > 0:
-                    ax7.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max_vis*0.02,
-                             f"{cnt}\n({pct_v}%)", ha="center", va="bottom", fontsize=9, fontweight="bold")
-        ax7.set_xticks(x_v)
-        ax7.set_xticklabels(vis_labels_v, fontsize=11)
-        ax7.set_title("VISIBILIDAD POR EXHIBIDOR", fontsize=14, fontweight="bold", pad=12)
-        ax7.set_ylabel("Cantidad de Visitas", fontsize=11)
-        ax7.set_ylim(0, max_vis * 1.4)
-        ax7.legend(title="Visibilidad", fontsize=11)
-        ax7.yaxis.grid(True, linestyle="--", alpha=0.5)
-        ax7.set_axisbelow(True)
-        ax7.spines["top"].set_visible(False)
-        ax7.spines["right"].set_visible(False)
+                    pct_v = round(cnt / total_visitas * 100, 1)
+                    ax_vi.text(bar.get_x() + bar.get_width()/2,
+                               bar.get_height() + maxv * 0.025,
+                               f"{cnt}\n({pct_v}%)",
+                               ha="center", va="bottom", fontsize=8, fontweight="bold")
+        ax_vi.set_xticks(xv)
+        ax_vi.set_xticklabels(v_lbls, fontsize=10)
+        chart_style(ax_vi, "VISIBILIDAD POR EXHIBIDOR",
+                    ylabel="Cantidad de Visitas")
+        ax_vi.set_ylim(0, maxv * 1.5)
+        ax_vi.legend(title="Visibilidad", fontsize=10)
         plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig7), f"A{chart_start4}", IMG_W, IMG_H)
-        plt.close(fig7)
-
-    # ─── 8. EFECTIVIDAD DE VISITAS ────────────────────────────────────────
-    if "Concreto" in df_f.columns:
-        df_efec = df_f["Concreto"].value_counts().reset_index()
-        df_efec.columns = ["Estado", "Cantidad"]
-        total_efec = df_efec["Cantidad"].sum()
-
-        fig8, ax8 = plt.subplots(figsize=(7, 4))
-        colors_ef = ["#7b5ea7" if e == "CONCRETO" else "#e05252" for e in df_efec["Estado"]]
-        bars8 = ax8.barh(df_efec["Estado"], df_efec["Cantidad"], color=colors_ef, edgecolor="white", height=0.5)
-        for bar, cnt in zip(bars8, df_efec["Cantidad"]):
-            pct = round(cnt / total_efec * 100) if total_efec > 0 else 0
-            ax8.text(bar.get_width() + df_efec["Cantidad"].max() * 0.02, bar.get_y() + bar.get_height()/2,
-                     f"{pct}%  ({cnt})", va="center", ha="left", fontsize=12, fontweight="bold")
-        ax8.set_title("EFECTIVIDAD DE VISITAS", fontsize=14, fontweight="bold", pad=12)
-        ax8.set_xlabel("Cantidad de Visitas", fontsize=11)
-        ax8.set_xlim(0, df_efec["Cantidad"].max() * 1.4)
-        ax8.xaxis.grid(True, linestyle="--", alpha=0.5)
-        ax8.set_axisbelow(True)
-        ax8.spines["top"].set_visible(False)
-        ax8.spines["right"].set_visible(False)
-        plt.tight_layout()
-        insert_image_bytes(fig_to_bytes(fig8), f"G{chart_start4}", IMG_W, IMG_H)
-        plt.close(fig8)
+        insert_image_bytes(fig_to_bytes(fig_vi), f"G{cs_cv}", IMG_HALF_W, IMG_H)
+        plt.close(fig_vi)
 
     row_cur += 1
 
-    # ─── 9. PRESENCIA DE PRODUCTOS ────────────────────────────────────────
-    todos_productos_grupos = {
-        "🍪 BISCUITS": {
+    # ══════════════════════════════════════════════════════════════════════
+    # GRÁFICOS 10-12 — PRESENCIA DE PRODUCTOS (ancho completo, uno por grupo)
+    # ══════════════════════════════════════════════════════════════════════
+    productos_grupos = {
+        "BISCUITS": {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
             "RITZ_ROLLO": "RITZ ROLLO", "RITZ_PACK": "RITZ PACK",
             "FIELD_CC": "FIELD CC", "FIELD_DP": "FIELD DP", "FIELD_VAIN": "FIELD VAIN",
             "CLUB_SOCIAL_TRA": "CLUB SOCIAL TRA",
         },
-        "⭐ PRODUCTOS FOCO": {
+        "PRODUCTOS FOCO": {
             "OREO_FRESA_PACK": "OREO FRESA (Pack)", "OREO_FRESA_ROLLO": "OREO FRESA (Rollo)",
-            "OREO_CHOCO_LIMON_PACK": "OREO CHOCO LIMÓN (Pack)", "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
+            "OREO_CHOCO_LIMON_PACK": "OREO CHOCO LIMÓN (Pack)",
+            "OREO_CHOCO_LIMON_ROLLO": "OREO CHOCO LIMÓN (Rollo)",
             "CLUB_SOCIAL_SAB": "CLUB SOCIAL (Sabores)",
             "ROLLO_GOLDEN": "OREO GOLDEN (Rollo)", "ROLLO_CHOCOLATE": "OREO CHOCOLATE (Rollo)",
         },
-        "🍬 G&C": {
+        "G&C": {
             "TRIDENT_5s": "TRIDENT 5s", "TRIDENT_EVUP": "TRIDENT EVUP",
             "HALLS_12s": "HALLS 12s", "HALLS_100s": "HALLS 100s",
             "CHICLETS_2S": "CHICLETS 2S", "BUBBALOO": "BUBBALOO",
@@ -609,147 +674,97 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
 
     row_cur = section_header(row_cur, "PRESENCIA DE PRODUCTOS (% DE VISITAS)", "1a1a1a")
 
-    for grupo_nombre, prods in todos_productos_grupos.items():
-        chart_start_p = row_cur
+    for gp_name, prods in productos_grupos.items():
+        cs_pr   = row_cur
         row_cur = reserve_rows(row_cur, 22, 15)
+        pres_d  = []
+        for kp, lp in prods.items():
+            if kp in df_f.columns:
+                sp  = pd.to_numeric(df_f[kp], errors="coerce")
+                cnt = int(sp.sum())
+                pct = round(sp.mean() * 100, 1)
+                pres_d.append({"Producto": lp, "Pct": pct, "Cnt": cnt})
+        if not pres_d:
+            row_cur += 1
+            continue
 
-        presencia_data = []
-        for key_p, label_p in prods.items():
-            if key_p in df_f.columns:
-                serie_p = pd.to_numeric(df_f[key_p], errors="coerce")
-                cnt_p = int(serie_p.sum())
-                pct_p = round(serie_p.mean() * 100, 1)
-                presencia_data.append({"Producto": label_p, "Pct": pct_p, "Cnt": cnt_p})
-
-        if presencia_data:
-            df_pres = pd.DataFrame(presencia_data).sort_values("Pct", ascending=False)
-            colors_pr = [PALETTE[i % len(PALETTE)] for i in range(len(df_pres))]
-
-            fig_p, ax_p = plt.subplots(figsize=(11, 4.5))
-            bars_p = ax_p.bar(df_pres["Producto"], df_pres["Pct"], color=colors_pr, edgecolor="white", linewidth=1)
-            for bar, pct, cnt in zip(bars_p, df_pres["Pct"], df_pres["Cnt"]):
-                ax_p.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1.5,
-                          f"{pct}%\n({cnt}/{total_visitas})", ha="center", va="bottom", fontsize=9, fontweight="bold")
-            ax_p.set_title(f"PRESENCIA — {grupo_nombre}", fontsize=13, fontweight="bold", pad=12)
-            ax_p.set_ylabel("Presencia %", fontsize=11)
-            ax_p.set_ylim(0, 115)
-            ax_p.tick_params(axis="x", labelsize=9)
-            ax_p.yaxis.grid(True, linestyle="--", alpha=0.5)
-            ax_p.set_axisbelow(True)
-            ax_p.spines["top"].set_visible(False)
-            ax_p.spines["right"].set_visible(False)
-            plt.xticks(rotation=25, ha="right")
-            plt.tight_layout()
-            insert_image_bytes(fig_to_bytes(fig_p), f"A{chart_start_p}", IMG_W * 2 + 20, IMG_H)
-            plt.close(fig_p)
-
+        df_pr = pd.DataFrame(pres_d).sort_values("Pct", ascending=False)
+        fig_pr, ax_pr = plt.subplots(figsize=(13, 5))
+        bars_pr = ax_pr.bar(
+            df_pr["Producto"], df_pr["Pct"],
+            color=[PALETTE[i % len(PALETTE)] for i in range(len(df_pr))],
+            edgecolor="white", linewidth=1, zorder=3)
+        for bar, pct, cnt in zip(bars_pr, df_pr["Pct"], df_pr["Cnt"]):
+            ax_pr.text(bar.get_x() + bar.get_width()/2,
+                       bar.get_height() + 1.8,
+                       f"{pct}%\n({cnt}/{total_visitas})",
+                       ha="center", va="bottom", fontsize=9, fontweight="bold")
+        chart_style(ax_pr, f"PRESENCIA DE PRODUCTOS — {gp_name}",
+                    ylabel="Presencia %")
+        ax_pr.set_ylim(0, 118)
+        plt.xticks(rotation=22, ha="right", fontsize=9)
+        plt.tight_layout()
+        insert_image_bytes(fig_to_bytes(fig_pr), f"A{cs_pr}", IMG_FULL_W, IMG_H_WIDE)
+        plt.close(fig_pr)
         row_cur += 1
 
-    # ─── 10. MAPA DE VISITAS (estático con scatter) ───────────────────────
-    if "Latitud" in df_f.columns and "Longitud" in df_f.columns:
-        df_map = df_f.copy()
-        df_map["Latitud"]  = pd.to_numeric(df_map["Latitud"],  errors="coerce")
-        df_map["Longitud"] = pd.to_numeric(df_map["Longitud"], errors="coerce")
-        df_map = df_map.dropna(subset=["Latitud", "Longitud"])
-
-        if not df_map.empty:
-            row_cur = section_header(row_cur, "MAPA DE VISITAS (DISTRIBUCIÓN GEOGRÁFICA)", "4472C4")
-            chart_start5 = row_cur
-            row_cur = reserve_rows(row_cur, 28, 15)
-
-            zonas_unicas = df_map["Zona"].dropna().unique().tolist() if "Zona" in df_map.columns else ["Sin Zona"]
-            zona_color_map = {z: PALETTE[i % len(PALETTE)] for i, z in enumerate(zonas_unicas)}
-
-            fig9, ax9 = plt.subplots(figsize=(12, 7))
-            for zona in zonas_unicas:
-                grp = df_map[df_map["Zona"] == zona] if "Zona" in df_map.columns else df_map
-                color_z = zona_color_map.get(zona, "#888888")
-                ax9.scatter(grp["Longitud"], grp["Latitud"], c=color_z, s=80, label=zona,
-                            alpha=0.85, edgecolors="white", linewidths=0.7, zorder=5)
-
-            # Etiquetas de clientes
-            for _, row_m in df_map.iterrows():
-                ax9.annotate(
-                    str(row_m.get("Nombre_Cliente", ""))[:18],
-                    (row_m["Longitud"], row_m["Latitud"]),
-                    textcoords="offset points", xytext=(5, 4),
-                    fontsize=7, alpha=0.75,
-                )
-
-            ax9.set_title("MAPA DE VISITAS — DISTRIBUCIÓN GEOGRÁFICA", fontsize=14, fontweight="bold", pad=12)
-            ax9.set_xlabel("Longitud", fontsize=11)
-            ax9.set_ylabel("Latitud",  fontsize=11)
-            ax9.legend(title="Zona", fontsize=9, title_fontsize=10, loc="upper right",
-                       framealpha=0.9, edgecolor="#cccccc")
-            ax9.grid(True, linestyle="--", alpha=0.4)
-            ax9.spines["top"].set_visible(False)
-            ax9.spines["right"].set_visible(False)
-            plt.tight_layout()
-            insert_image_bytes(fig_to_bytes(fig9), f"A{chart_start5}", IMG_W * 2 + 20, 420)
-            plt.close(fig9)
-
-    # ─── TABLA ÚLTIMAS VISITAS ─────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════
+    # TABLA ÚLTIMAS VISITAS
+    # ══════════════════════════════════════════════════════════════════════
     row_cur = section_header(row_cur, "ÚLTIMAS VISITAS — DETALLE", "1a1a1a")
-    cols_tabla = ["Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Vendedor",
-                  "Zona", "Efectividad_Soles", "Tiempo_PDC", "Colocacion_Terceros", "Marca_Tercero"]
-    cols_existentes = [c for c in cols_tabla if c in df_f.columns]
-    df_tabla = df_f[cols_existentes].sort_values("Fecha", ascending=False).head(100)
+    cols_tbl = ["Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Vendedor",
+                "Zona", "Efectividad_Soles", "Tiempo_PDC",
+                "Colocacion_Terceros", "Marca_Tercero"]
+    cols_ex  = [c for c in cols_tbl if c in df_f.columns]
+    df_tbl   = df_f[cols_ex].sort_values("Fecha", ascending=False).head(100)
 
-    header_colors = ["4472C4", "4472C4", "4472C4", "6a9e4f", "6a9e4f",
-                     "FF7F0E", "7b5ea7", "e05252", "FFC107", "FFC107"]
-    for ci, col_name in enumerate(cols_existentes, 1):
-        c = ws.cell(row=row_cur, column=ci, value=col_name.replace("_", " ").upper())
-        hc = header_colors[ci - 1] if ci - 1 < len(header_colors) else "4472C4"
-        c.font = Font(bold=True, size=10, color="FFFFFF", name="Arial")
-        c.fill = PatternFill("solid", fgColor=hc)
+    hdr_cols = ["4472C4", "4472C4", "4472C4", "6a9e4f", "6a9e4f",
+                "FF7F0E", "7b5ea7", "e05252", "FFC107", "FFC107"]
+    for ci, col_n in enumerate(cols_ex, 1):
+        c = ws.cell(row=row_cur, column=ci, value=col_n.replace("_", " ").upper())
+        hc = hdr_cols[ci - 1] if ci - 1 < len(hdr_cols) else "4472C4"
+        c.font      = Font(bold=True, size=10, color="FFFFFF", name="Arial")
+        c.fill      = PatternFill("solid", fgColor=hc)
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        c.border = border
+        c.border    = border
     ws.row_dimensions[row_cur].height = 22
     row_cur += 1
 
-    alt_fill = PatternFill("solid", fgColor="F5F5F5")
-    for ri, (_, row_data) in enumerate(df_tabla.iterrows()):
-        for ci, col_name in enumerate(cols_existentes, 1):
-            val = row_data[col_name]
-            if pd.isna(val):
-                val = ""
+    alt_fill2 = PatternFill("solid", fgColor="F5F5F5")
+    for ri, (_, rd) in enumerate(df_tbl.iterrows()):
+        for ci, col_n in enumerate(cols_ex, 1):
+            val = rd[col_n]
+            if pd.isna(val): val = ""
             c = ws.cell(row=row_cur, column=ci, value=val)
-            c.font = Font(size=10, name="Arial")
-            c.border = border
+            c.font      = Font(size=10, name="Arial")
+            c.border    = border
             c.alignment = Alignment(horizontal="center", vertical="center")
             if ri % 2 == 1:
-                c.fill = alt_fill
+                c.fill = alt_fill2
         ws.row_dimensions[row_cur].height = 16
         row_cur += 1
 
-    # ── AJUSTAR ANCHOS DE COLUMNAS ────────────────────────────────────────
-    col_widths = {
-        "A": 32, "B": 18, "C": 18, "D": 18, "E": 18, "F": 18,
-        "G": 32, "H": 18, "I": 18, "J": 18, "K": 18, "L": 18,
-    }
-    for col_letter, w in col_widths.items():
-        ws.column_dimensions[col_letter].width = w
+    # ── Anchos de columnas ─────────────────────────────────────────────────
+    for col_l, w in {"A": 32, "B": 18, "C": 18, "D": 18, "E": 18, "F": 18,
+                     "G": 32, "H": 18, "I": 18, "J": 18, "K": 18, "L": 18}.items():
+        ws.column_dimensions[col_l].width = w
 
-    # ── HOJA DATOS RAW ────────────────────────────────────────────────────
-    ws_raw = wb.create_sheet("Datos Completos")
-    export_df = df_f.copy()
-    export_df = export_df.merge(
-        ticket_calc[["Vendedor", "Fecha_str", "Ticket_Calculado"]],
-        on=["Vendedor", "Fecha_str"], how="left"
-    )
-    cols_export = [c for c in export_df.columns if c not in ["Imagen_Path", "Fecha_str", "Concreto"]]
-
-    for ci, col_name in enumerate(cols_export, 1):
-        c = ws_raw.cell(row=1, column=ci, value=col_name)
-        c.font = Font(bold=True, size=11, color="FFFFFF", name="Arial")
-        c.fill = PatternFill("solid", fgColor="1a1a1a")
+    # ── Hoja Datos Completos ───────────────────────────────────────────────
+    ws_raw  = wb.create_sheet("Datos Completos")
+    exp_df  = df_f.copy()
+    exp_df  = exp_df.merge(ticket_calc[["Vendedor", "Fecha_str", "Ticket_Calculado"]],
+                           on=["Vendedor", "Fecha_str"], how="left")
+    cols_rw = [c for c in exp_df.columns
+               if c not in ["Imagen_Path", "Fecha_str", "Concreto"]]
+    for ci, col_n in enumerate(cols_rw, 1):
+        c = ws_raw.cell(row=1, column=ci, value=col_n)
+        c.font      = Font(bold=True, size=11, color="FFFFFF", name="Arial")
+        c.fill      = PatternFill("solid", fgColor="1a1a1a")
         c.alignment = Alignment(horizontal="center", vertical="center")
         ws_raw.column_dimensions[get_column_letter(ci)].width = 18
-
-    for ri, (_, row_data) in enumerate(export_df[cols_export].iterrows(), 2):
-        for ci, val in enumerate(row_data, 1):
-            if pd.isna(val):
-                val = ""
+    for ri, (_, rd) in enumerate(exp_df[cols_rw].iterrows(), 2):
+        for ci, val in enumerate(rd, 1):
+            if pd.isna(val): val = ""
             ws_raw.cell(row=ri, column=ci, value=val).font = Font(size=10, name="Arial")
 
     wb.save(dash_buf)
