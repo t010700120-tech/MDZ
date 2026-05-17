@@ -859,23 +859,89 @@ elif st.session_state.pagina == "dashboard":
                 title=dict(text="<b>COLOCACIÓN DE TERCEROS</b>", font=dict(size=FONT_SIZE_TITLE, family="DM Sans"), x=0.5, xanchor="center"))
             st.plotly_chart(fig_terc, use_container_width=True)
 
-            if "Marca_Tercero" in df_f.columns:
-                df_f["Marca_Tercero"] = df_f["Marca_Tercero"].astype(str)
-                df_marcas = df_f[
-                    (df_f["Colocacion_Terceros"] == "Sí") &
-                    (df_f["Marca_Tercero"].str.strip().str.lower() != "nan") &
-                    (df_f["Marca_Tercero"].str.strip() != "")
-                ]["Marca_Tercero"].str.strip().str.upper().value_counts().reset_index()
-                df_marcas.columns = ["Marca", "Visitas"]
-                if not df_marcas.empty:
-                    total_m = df_marcas["Visitas"].sum()
-                    df_marcas["Etiqueta"] = df_marcas.apply(lambda r: f"{r['Visitas']}  ({round(r['Visitas']/total_m*100)}%)", axis=1)
-                    st.caption("Marcas detectadas")
-                    fig_marcas = px.bar(df_marcas, x="Visitas", y="Marca", orientation="h",
-                                        text="Etiqueta", color_discrete_sequence=["#e05252"])
-                    fig_marcas.update_traces(textposition="outside", textfont_size=FONT_SIZE_TEXT)
-                    fig_marcas.update_layout(**base_layout())
-                    st.plotly_chart(fig_marcas, use_container_width=True)
+    st.markdown("---")
+
+    # ── Gráfico de Marcas de Terceros (sección independiente) ────────────
+    if "Marca_Tercero" in df_f.columns:
+        df_f["Marca_Tercero"] = df_f["Marca_Tercero"].astype(str)
+
+        # Separar múltiples marcas por coma y explotar
+        df_marcas_raw = df_f[
+            (df_f["Colocacion_Terceros"] == "Sí") &
+            (df_f["Marca_Tercero"].str.strip().str.lower() != "nan") &
+            (df_f["Marca_Tercero"].str.strip() != "")
+        ]["Marca_Tercero"].copy()
+
+        # Expandir marcas separadas por coma
+        todas_marcas = []
+        for val in df_marcas_raw:
+            for m in str(val).split(","):
+                m_clean = m.strip().upper()
+                if m_clean and m_clean != "NAN":
+                    todas_marcas.append(m_clean)
+
+        if todas_marcas:
+            from collections import Counter
+            conteo = Counter(todas_marcas)
+            df_marcas = pd.DataFrame(conteo.items(), columns=["Marca", "Cantidad"]).sort_values("Cantidad", ascending=True)
+            total_m = df_marcas["Cantidad"].sum()
+            df_marcas["Pct"] = (df_marcas["Cantidad"] / total_m * 100).round(1)
+            df_marcas["Etiqueta"] = df_marcas.apply(lambda r: f"  {r['Cantidad']} visitas  ({r['Pct']}%)", axis=1)
+
+            PALETTE_MARCAS = [
+                "#4472C4","#e05252","#6a9e4f","#FF7F0E","#7b5ea7",
+                "#FFC107","#00BCD4","#FF69B4","#8BC34A","#FF5722",
+                "#9C27B0","#03A9F4","#CDDC39","#795548","#607D8B",
+            ]
+            color_marcas = {m: PALETTE_MARCAS[i % len(PALETTE_MARCAS)] for i, m in enumerate(df_marcas["Marca"].tolist())}
+
+            st.markdown("#### 🏷️ Marcas de Terceros Detectadas en PDC")
+            st.caption(f"Total de menciones registradas: {total_m}  |  Marcas únicas: {len(df_marcas)}")
+
+            fig_marcas = px.bar(
+                df_marcas,
+                x="Cantidad",
+                y="Marca",
+                orientation="h",
+                text="Etiqueta",
+                color="Marca",
+                color_discrete_map=color_marcas,
+                title="<b>MARCAS DE COMPETENCIA EN PUNTO DE VENTA</b>",
+            )
+            fig_marcas.update_traces(
+                textposition="outside",
+                textfont=dict(size=14, family="DM Sans"),
+                marker_line_width=0,
+            )
+            fig_marcas.update_layout(
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                font=dict(family="DM Sans", size=14),
+                title=dict(
+                    text="<b>MARCAS DE COMPETENCIA EN PUNTO DE VENTA</b>",
+                    font=dict(size=17, family="DM Sans"),
+                    x=0.5, xanchor="center",
+                ),
+                showlegend=False,
+                margin=dict(t=60, b=40, l=20, r=120),
+                xaxis=dict(
+                    title="Número de Visitas con Presencia",
+                    tickfont=dict(size=13),
+                    title_font=dict(size=14),
+                    gridcolor="#f0f0f0",
+                    range=[0, df_marcas["Cantidad"].max() * 1.35],
+                ),
+                yaxis=dict(
+                    title="Marca Competidora",
+                    tickfont=dict(size=14),
+                    title_font=dict(size=14),
+                    automargin=True,
+                ),
+                height=max(300, len(df_marcas) * 55 + 120),
+            )
+            st.plotly_chart(fig_marcas, use_container_width=True)
+        else:
+            st.info("No hay marcas de terceros registradas en el período seleccionado.")
 
     st.markdown("---")
 
