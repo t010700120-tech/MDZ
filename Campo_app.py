@@ -39,20 +39,6 @@ CSV_FILE = "visitas.csv"
 IMG_FOLDER = "imagenes_visita"
 os.makedirs(IMG_FOLDER, exist_ok=True)
 
-VENDEDORES_LISTA = [
-    "ESTHEFANO PRETELL BAZAN", "JULIO IVAN REBAZA URTECHO", "MARIA NOEMI BLAS VILLARRUEL",
-    "YESSICA MAGALY SOTO ZAVALETA", "CARLOS MANUEL QUIROZ DIAZ", "IVAN GERONIMO CRUZ",
-    "HEISER LOPEZ CRUZADO", "MILAGROS SOLEDAD ESQUERRE GARCIA", "MAYCOLL SOLORZANO VILLACORTA",
-    "MARIA CRISTHINA PAREDES NEYRA", "JESUS SMITH ARGOMEDO ZAVALETA", "DICK RONNI MENDOCILLA DOMINGUEZ",
-    "MAYDA CAROLINA PEREZ MENDOZA", "CARLOS JONATAN VALDERRAMA CRUZADO", "NUNEZ REYES KARLA PATRICIA",
-    "JORGE RUBEN TABOADA PRINCIPE", "ANGEL SERAFIN ROMERO ROJAS", "DAYANA YAJARUMI CASTILLO AMASIFUEN",
-    "LUCIA ELIZABETH VILLANUEVA DOMINGUEZ", "JHORDAN MURGA ORTIZ", "ELISA FLOR CHIGUALA DE LA CRUZ",
-    "RODMAN JERSON DE LA CRUZ RODRIGUEZ", "DOUGLAS ALFONSO FLORES VARGAS", "JEAN POOL RAMIREZ RODRIGUEZ",
-    "BERTIN JUNIOR BACA BARRIGA", "FRANKLIN ROYMAR VILLOSLADA DIAZ", "ALBERTO ESTEBAN CARLOS PONCE",
-    "MARIA ESTEFANY RODRIGUEZ MENDOZA", "CAROLINA MIRANDA CHICO", "ROSANGELA GRACIELA GUANILO RAMOS",
-    "JHON DARWIN CONTRERAS DIAZ", "GIAMPIERO VLADIMIR VILLAFANA BECERRA", "FRANKLIN JERSON VELASQUEZ CUSQUISIBAN",
-]
-
 COLUMNAS = [
     "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
     "Vendedor", "Codigo_Vendedor", "Mesa", "Zona", "Latitud", "Longitud",
@@ -403,10 +389,8 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     insert_image_bytes(fig_to_bytes(fig_ex), f"A{cs_ex}", IMG_HALF_W, IMG_H)
     plt.close(fig_ex)
 
-    # ── Tipo de Negocio por Exhibidor
-    # Formato imagen 2: eje X = Giro de Negocio, barras agrupadas por Exhibidor
-    # Cada barra = un exhibidor, color diferente por exhibidor
-    # ─────────────────────────────────────────────────────────────────────
+    # ── Tipo de Negocio por Exhibidor ─────────────────────────────────────
+    import numpy as np
     exhib_giro_data = []
     for col_ex2, label_ex2 in exhib_cols_dict.items():
         if col_ex2 in df_f.columns and "Giro_Negocio" in df_f.columns:
@@ -425,7 +409,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         df_eg       = pd.DataFrame(exhib_giro_data)
         giros_u     = sorted(df_eg["Giro"].unique().tolist())
         exhibs_u    = list(exhib_cols_dict.values())
-        # solo exhibidores que tienen datos
         exhibs_u    = [e for e in exhibs_u if e in df_eg["Exhibidor"].unique()]
         n_giros     = len(giros_u)
         n_exhibs    = len(exhibs_u)
@@ -480,7 +463,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     cs_tc   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
 
-    # ── Terceros (pie) ────────────────────────────────────────────────────
     if "Colocacion_Terceros" in df_f.columns and "Giro_Negocio" in df_f.columns:
         df_tg = df_f.copy()
         df_tg["Giro_Short"] = (df_tg["Giro_Negocio"]
@@ -510,7 +492,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         insert_image_bytes(fig_to_bytes(fig_tc), f"A{cs_tc}", IMG_HALF_W, IMG_H)
         plt.close(fig_tc)
 
-    # ── Marcas de Terceros (barras horizontales) ──────────────────────────
     if "Marca_Tercero" in df_f.columns:
         df_mr = df_f[
             (df_f["Colocacion_Terceros"] == "Sí") &
@@ -561,7 +542,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     cs_cv   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
 
-    # ── Contaminación ──────────────────────────────────────────────────────
     cont_info = [("CONT_LEGOS_GC", "LEGOS G&C"),
                  ("CONT_TOBOGAN_RITZ_OREO", "TOBOGÁN Ritz/Oreo"),
                  ("CONT_EXHIB_KIWI", "EXHIB KIWI")]
@@ -606,7 +586,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         insert_image_bytes(fig_to_bytes(fig_ct), f"A{cs_cv}", IMG_HALF_W, IMG_H)
         plt.close(fig_ct)
 
-    # ── Visibilidad ────────────────────────────────────────────────────────
     vis_info = [("Visibilidad_Legos",   "LEGOS G&C"),
                 ("Visibilidad_Tobogan", "TOBOGÁN Ritz/Oreo"),
                 ("Visibilidad_Kiwi",    "EXHIB KIWI"),
@@ -744,12 +723,10 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         ws.row_dimensions[row_cur].height = 16
         row_cur += 1
 
-    # ── Anchos de columnas ─────────────────────────────────────────────────
     for col_l, w in {"A": 32, "B": 18, "C": 18, "D": 18, "E": 18, "F": 18,
                      "G": 32, "H": 18, "I": 18, "J": 18, "K": 18, "L": 18}.items():
         ws.column_dimensions[col_l].width = w
 
-    # ── Hoja Datos Completos ───────────────────────────────────────────────
     ws_raw  = wb.create_sheet("Datos Completos")
     exp_df  = df_f.copy()
     exp_df  = exp_df.merge(ticket_calc[["Vendedor", "Fecha_str", "Ticket_Calculado"]],
@@ -954,13 +931,21 @@ if st.session_state.pagina == "formulario":
         st.markdown("### 🧑‍💼 Ruta")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
-            vendedor_opciones = ["Selecciona..."] + VENDEDORES_LISTA
-            vendedor_sel = st.selectbox("Nombre del Vendedor", vendedor_opciones, key="sel_vendedor")
-            vendedor = vendedor_sel if vendedor_sel != "Selecciona..." else ""
+            # ── CAMBIO: campo de texto libre para el nombre del vendedor ──
+            vendedor = st.text_input(
+                "Nombre del Vendedor",
+                placeholder="Escribe el nombre completo del vendedor",
+                key="txt_vendedor",
+            )
         with col_v2:
             codigo_vendedor = st.text_input("Código de Vendedor", max_chars=8, placeholder="Ej: VEN00001")
         with col_v3:
-            mesa = st.selectbox("Mesa", ["Selecciona...", "DJ1", "DJ3"])
+            # ── CAMBIO: campo de texto libre para la mesa ──
+            mesa = st.text_input(
+                "Mesa",
+                placeholder="Ej: DJ1, DJ3...",
+                key="txt_mesa",
+            )
         ruta_logica = st.text_input("Ruta Lógica", placeholder="Ej: Ruta 01 - Norte")
 
         st.markdown("---")
