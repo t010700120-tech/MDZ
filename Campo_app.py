@@ -890,6 +890,39 @@ if st.session_state.pagina == "formulario":
         with col2: codigo_pdc = st.text_input("Código PDC (8 dígitos)", max_chars=8, placeholder="Ej: 00000001")
         with col3: nombre_cliente = st.text_input("Nombre del Cliente", placeholder="Ej: Bodega Central")
 
+        # ── Si no hay nombre de cliente, mostrar campo alternativo ──────────
+        nombre_alternativo = ""
+        if not nombre_cliente.strip():
+            st.markdown(
+                '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;'
+                'padding:8px 14px;font-size:13px;color:#7a6000;margin-bottom:8px;">'
+                '⚠️ Si el cliente no tiene nombre registrado, completa el campo alternativo a continuación.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            col_alt1, col_alt2 = st.columns([2, 1])
+            with col_alt1:
+                nombre_alternativo = st.text_input(
+                    "Descripción / Nombre alternativo",
+                    placeholder="Ej: Bodega esquina Jr. Las Flores, Puesto 12 mercado...",
+                    key="nombre_alt",
+                )
+            with col_alt2:
+                referencia_extra = st.text_input(
+                    "Referencia adicional (opcional)",
+                    placeholder="Ej: frente al parque, piso 2...",
+                    key="ref_extra",
+                )
+            # Construir nombre final combinando ambos campos
+            if nombre_alternativo.strip() and referencia_extra.strip():
+                nombre_cliente_final = f"{nombre_alternativo.strip()} — {referencia_extra.strip()}"
+            elif nombre_alternativo.strip():
+                nombre_cliente_final = nombre_alternativo.strip()
+            else:
+                nombre_cliente_final = "SIN NOMBRE"
+        else:
+            nombre_cliente_final = nombre_cliente.strip()
+
         col4, col5 = st.columns(2)
         with col4:
             giro_negocio = st.selectbox("Giro de Negocio", [
@@ -1148,11 +1181,11 @@ if st.session_state.pagina == "formulario":
         submitted = st.form_submit_button("💾 Guardar registro", use_container_width=True)
 
         if submitted:
-            if not codigo_pdc or not nombre_cliente or giro_negocio == "Selecciona...":
-                st.error("Por favor completa el Código PDC, Nombre del Cliente y Giro de Negocio.")
+            if not codigo_pdc or giro_negocio == "Selecciona...":
+                st.error("Por favor completa el Código PDC y el Giro de Negocio.")
             else:
                 img_paths = []
-                nombre_limpio = nombre_cliente.strip().replace(" ", "_").replace("/", "-")
+                nombre_limpio = nombre_cliente_final.replace(" ", "_").replace("/", "-").replace("\u2014", "-")[:40]
                 for idx, img_file in enumerate([imagen_1, imagen_2, imagen_3, imagen_4, imagen_5], start=1):
                     if img_file is not None:
                         ext = img_file.name.rsplit(".", 1)[-1].lower()
@@ -1165,7 +1198,7 @@ if st.session_state.pagina == "formulario":
                 img_path_guardado = "|".join(img_paths) if img_paths else ""
                 registro = {
                     "Fecha": str(fecha), "Codigo_PDC": codigo_pdc,
-                    "Nombre_Cliente": nombre_cliente, "Giro_Negocio": giro_negocio,
+                    "Nombre_Cliente": nombre_cliente_final, "Giro_Negocio": giro_negocio,
                     "Vendedor": vendedor, "Codigo_Vendedor": codigo_vendedor,
                     "Mesa": mesa, "Zona": zona, "Latitud": latitud, "Longitud": longitud,
                     **{k: int(v) for k, v in biscuits_vals.items()},
