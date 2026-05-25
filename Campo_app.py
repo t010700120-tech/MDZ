@@ -32,6 +32,10 @@ st.markdown("""
     .leyenda-box { background: #f0f0eb; border-radius: 8px; padding: .5rem 1rem; font-size: 13px; color: #666; margin-bottom: 12px; }
     .btn-danger > button { background: #e05252 !important; color: white !important; border: none !important; }
     .btn-danger > button:hover { background: #c0392b !important; }
+    .edit-info { background: #e8f4fd; border: 1px solid #b3d9f5; border-radius: 8px; padding: 8px 14px;
+        font-size: 13px; color: #1a5276; margin-bottom: 8px; }
+    .filter-info { background: #fef9e7; border: 1px solid #f9e79f; border-radius: 8px; padding: 8px 14px;
+        font-size: 13px; color: #7d6608; margin-bottom: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -57,6 +61,28 @@ COLUMNAS = [
     "Efectividad_Soles", "Tiempo_PDC", "Imagen_Path",
 ]
 
+# Mapeo de giros a nombres legibles para el eje X
+GIRO_LABELS = {
+    "1 - Bodega": "Bodega",
+    "2 - Minimarket / Tiendas": "Minimarket",
+    "3 - Kiosko": "Kiosko",
+    "4 - Especializados (Panificadora, Horeca, Internet...)": "Especializados",
+    "5 - Otros (Puesto de mercado, Centros Educativos...)": "Otros",
+}
+
+def giro_short(giro_str):
+    """Retorna el nombre corto del giro, compatible con label original o limpio."""
+    if pd.isna(giro_str):
+        return "Sin Giro"
+    s = str(giro_str).strip()
+    for k, v in GIRO_LABELS.items():
+        if k.lower() in s.lower() or s.lower() in k.lower():
+            return v
+    # fallback: quitar número inicial
+    import re
+    return re.sub(r"^\d+ - ", "", s).strip()
+
+
 def cargar_datos():
     if os.path.exists(CSV_FILE):
         return pd.read_csv(CSV_FILE)
@@ -78,6 +104,8 @@ def eliminar_historial():
 for _k, _v in {
     "pagina": "formulario", "confirmar_eliminar": False, "gps_lat": "", "gps_lon": "",
     "snapshots": {}, "geo_resultados": [], "buscar_trigger": False,
+    "df_editado": None,           # DataFrame editable
+    "exhibidor_seleccionado": None,  # Filtro activo en gráfico exhibidor→giro
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -102,9 +130,6 @@ if not st.session_state.snapshots and os.path.exists(SNAPSHOTS_FILE):
 
 # ═══════════════════════════════════════════════════════════════
 # FUNCIÓN PRINCIPAL: GENERAR DASHBOARD EXCEL CON GRÁFICOS
-# ORDEN: KPIs → Ticket → Mapa → Giro → Efectividad → Exhibidores
-#        → Tipo Negocio/Exhibidor → Terceros → Marcas
-#        → Contaminación → Visibilidad → Presencia → Tabla
 # ═══════════════════════════════════════════════════════════════
 def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_vendedor,
                              total_visitas, total_ventas, ticket_prom_global,
@@ -119,7 +144,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     import numpy as np
     from collections import Counter
 
-    # ── paleta ────────────────────────────────────────────────────────────
     PALETTE = ["#4472C4", "#e05252", "#6a9e4f", "#FF7F0E", "#7b5ea7",
                "#FFC107", "#00BCD4", "#FF69B4", "#8BC34A", "#FF5722",
                "#9C27B0", "#03A9F4", "#CDDC39", "#795548", "#607D8B"]
@@ -132,7 +156,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     ws = wb.active
     ws.title = "Dashboard Operativo"
 
-    # ── helpers ────────────────────────────────────────────────────────────
     def insert_image_bytes(img_bytes, anchor_cell, width_px=480, height_px=320):
         img_io = io.BytesIO(img_bytes)
         img    = XLImage(img_io)
@@ -160,12 +183,11 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
             ws.row_dimensions[r].height = height
         return start_row + n
 
-    # ── imagen única ancho completo (columnas A-L) ─────────────────────────
-    IMG_FULL_W = 980   # px — ocupa ~12 columnas
-    IMG_HALF_W = 480   # px — ocupa ~6 columnas
-    IMG_H      = 330   # px altura estándar
-    IMG_H_MAP  = 430   # px mapa más alto
-    IMG_H_WIDE = 330   # px presencia (ancho total)
+    IMG_FULL_W = 980
+    IMG_HALF_W = 480
+    IMG_H      = 330
+    IMG_H_MAP  = 430
+    IMG_H_WIDE = 330
 
     def chart_style(ax, title, ylabel="", xlabel=""):
         ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
@@ -176,12 +198,9 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # CABECERA: Título + Período + KPIs
-    # ══════════════════════════════════════════════════════════════════════
+    # CABECERA
     ws.merge_cells("A1:L1")
-    c = ws.cell(row=1, column=1,
-                value="DASHBOARD OPERATIVO — SUPERVISIÓN CANAL TRADICIONAL")
+    c = ws.cell(row=1, column=1, value="DASHBOARD OPERATIVO — SUPERVISIÓN CANAL TRADICIONAL")
     c.font      = Font(bold=True, size=18, color="FFFFFF", name="Arial")
     c.fill      = PatternFill("solid", fgColor="1a1a1a")
     c.alignment = Alignment(horizontal="center", vertical="center")
@@ -226,7 +245,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         cv.alignment = Alignment(horizontal="center", vertical="center")
         cv.fill      = PatternFill("solid", fgColor="F8F8F8")
 
-    # ── TICKET TABLE ───────────────────────────────────────────────────────
+    # TICKET TABLE
     row_cur = 7
     ws.merge_cells(f"A{row_cur}:L{row_cur}")
     ctk = ws.cell(row=row_cur, column=1, value="TICKET PROMEDIO POR VENDEDOR Y DÍA")
@@ -261,9 +280,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
 
     row_cur = row_cur + 2 + len(ticket_calc) + 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICO 1 — MAPA DE VISITAS (ancho completo)
-    # ══════════════════════════════════════════════════════════════════════
+    # MAPA
     if "Latitud" in df_f.columns and "Longitud" in df_f.columns:
         df_map = df_f.copy()
         df_map["Latitud"]  = pd.to_numeric(df_map["Latitud"],  errors="coerce")
@@ -296,20 +313,16 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
             plt.close(fig_m)
             row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICO 2+3 — GIRO DE NEGOCIO (pie) | EFECTIVIDAD (barras h)
-    # ══════════════════════════════════════════════════════════════════════
+    # GIRO + EFECTIVIDAD
     row_cur = section_header(row_cur, "GIRO DE NEGOCIO  |  EFECTIVIDAD DE VISITAS", "4472C4")
     cs_ge   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
 
-    # ── Giro de Negocio (pie) ─────────────────────────────────────────────
     if "Giro_Negocio" in df_f.columns:
         df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
         df_giro.columns = ["Giro", "Visitas"]
-        df_giro["Giro_Short"] = df_giro["Giro"].str.replace(r"^\d+ - ", "", regex=True)
+        df_giro["Giro_Short"] = df_giro["Giro"].apply(giro_short)
         total_g = df_giro["Visitas"].sum()
-
         fig_gi, ax_gi = plt.subplots(figsize=(8, 5.5))
         wc = [PALETTE[i % len(PALETTE)] for i in range(len(df_giro))]
         wedges, _, autos = ax_gi.pie(
@@ -328,12 +341,10 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         insert_image_bytes(fig_to_bytes(fig_gi), f"A{cs_ge}", IMG_HALF_W, IMG_H)
         plt.close(fig_gi)
 
-    # ── Efectividad (barras horizontales) ─────────────────────────────────
     if "Concreto" in df_f.columns:
         df_ef  = df_f["Concreto"].value_counts().reset_index()
         df_ef.columns = ["Estado", "Cantidad"]
         total_ef = df_ef["Cantidad"].sum()
-
         fig_ef, ax_ef = plt.subplots(figsize=(8, 5.5))
         col_ef = ["#7b5ea7" if e == "CONCRETO" else "#e05252" for e in df_ef["Estado"]]
         bars_ef = ax_ef.barh(df_ef["Estado"], df_ef["Cantidad"],
@@ -354,9 +365,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
 
     row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICO 4+5 — COLOCACIÓN DE EXHIBIDORES | TIPO DE NEGOCIO POR EXHIBIDOR
-    # ══════════════════════════════════════════════════════════════════════
+    # EXHIBIDORES
     exhib_cols_dict = {
         "LEGOS_GC": "LEGOS G&C", "TOBOGAN_RITZ_OREO": "TOBOGÁN Ritz/Oreo",
         "EXHIB_KIWI": "EXHIB KIWI", "RITRAZ": "RITRAZ",
@@ -367,7 +376,6 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     cs_ex   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
 
-    # ── Colocación de Exhibidores ─────────────────────────────────────────
     labels_e = [d["Exhibidor"] for d in data_exhib]
     vals_e   = [d["Cantidad"]  for d in data_exhib]
     pcts_e   = [d["Pct"]       for d in data_exhib]
@@ -389,7 +397,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
     insert_image_bytes(fig_to_bytes(fig_ex), f"A{cs_ex}", IMG_HALF_W, IMG_H)
     plt.close(fig_ex)
 
-    # ── Tipo de Negocio por Exhibidor ─────────────────────────────────────
+    # Tipo de Negocio por Exhibidor
     import numpy as np
     exhib_giro_data = []
     for col_ex2, label_ex2 in exhib_cols_dict.items():
@@ -397,13 +405,9 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
             df_ex_s = df_f[pd.to_numeric(df_f[col_ex2], errors="coerce").fillna(0) > 0].copy()
             if df_ex_s.empty:
                 continue
-            df_ex_s["Giro_Short"] = (df_ex_s["Giro_Negocio"]
-                                     .str.replace(r"^\d+ - ", "", regex=True)
-                                     .str.strip())
+            df_ex_s["Giro_Short"] = df_ex_s["Giro_Negocio"].apply(giro_short)
             for giro, grp in df_ex_s.groupby("Giro_Short"):
-                exhib_giro_data.append({"Exhibidor": label_ex2,
-                                        "Giro": giro,
-                                        "Cantidad": len(grp)})
+                exhib_giro_data.append({"Exhibidor": label_ex2, "Giro": giro, "Cantidad": len(grp)})
 
     if exhib_giro_data:
         df_eg       = pd.DataFrame(exhib_giro_data)
@@ -413,67 +417,56 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         n_giros     = len(giros_u)
         n_exhibs    = len(exhibs_u)
         color_exhib = {e: PALETTE[i % len(PALETTE)] for i, e in enumerate(exhibs_u)}
-
         x_pos  = np.arange(n_giros)
         width  = 0.8 / max(n_exhibs, 1)
 
         fig_eg2, ax_eg2 = plt.subplots(figsize=(max(10, n_giros * 2.2), 5))
-
         for ei, exhib in enumerate(exhibs_u):
             vals_eg = []
             for giro in giros_u:
                 sub = df_eg[(df_eg["Exhibidor"] == exhib) & (df_eg["Giro"] == giro)]
                 vals_eg.append(int(sub["Cantidad"].sum()) if not sub.empty else 0)
-
             offset  = (ei - n_exhibs / 2 + 0.5) * width
-            bars_eg = ax_eg2.bar(x_pos + offset, vals_eg,
-                                 width * 0.92,
-                                 label=exhib,
-                                 color=color_exhib[exhib],
+            bars_eg = ax_eg2.bar(x_pos + offset, vals_eg, width * 0.92,
+                                 label=exhib, color=color_exhib[exhib],
                                  edgecolor="white", linewidth=0.8, zorder=3)
             max_eg_val = max(vals_eg) if vals_eg else 1
             for bar, cnt in zip(bars_eg, vals_eg):
                 if cnt > 0:
                     pct_eg = round(cnt / total_visitas * 100, 1)
-                    ax_eg2.text(
-                        bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() + max_eg_val * 0.04,
-                        f"{cnt}\n({pct_eg}%)",
-                        ha="center", va="bottom", fontsize=8, fontweight="bold"
-                    )
+                    ax_eg2.text(bar.get_x() + bar.get_width() / 2,
+                                bar.get_height() + max_eg_val * 0.04,
+                                f"{cnt}\n({pct_eg}%)",
+                                ha="center", va="bottom", fontsize=8, fontweight="bold")
 
         ax_eg2.set_xticks(x_pos)
         ax_eg2.set_xticklabels(giros_u, fontsize=9, rotation=15, ha="right")
         chart_style(ax_eg2, "COLOCACIÓN DE EXHIBIDORES POR GIRO DE NEGOCIO",
                     ylabel="Cantidad de Visitas")
-        all_vals_eg = [v for row_d in exhib_giro_data for v in [row_d["Cantidad"]]]
+        all_vals_eg = [row_d["Cantidad"] for row_d in exhib_giro_data]
         ax_eg2.set_ylim(0, (max(all_vals_eg) if all_vals_eg else 1) * 1.5)
-        ax_eg2.legend(title="Exhibidor", fontsize=8, title_fontsize=9,
-                      loc="upper right", ncol=2)
+        ax_eg2.legend(title="Exhibidor", fontsize=8, title_fontsize=9, loc="upper right", ncol=2)
         plt.tight_layout()
         insert_image_bytes(fig_to_bytes(fig_eg2), f"G{cs_ex}", IMG_HALF_W, IMG_H)
         plt.close(fig_eg2)
 
     row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICO 6+7 — COLOCACIÓN DE TERCEROS (pie) | MARCAS DE TERCEROS
-    # ══════════════════════════════════════════════════════════════════════
+    # TERCEROS + MARCAS
     row_cur = section_header(row_cur, "COLOCACIÓN DE TERCEROS  |  MARCAS DE COMPETENCIA", "7b5ea7")
     cs_tc   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
 
     if "Colocacion_Terceros" in df_f.columns and "Giro_Negocio" in df_f.columns:
         df_tg = df_f.copy()
-        df_tg["Giro_Short"] = (df_tg["Giro_Negocio"]
-                               .str.replace(r"^\d+ - ", "", regex=True).str.upper())
-        df_con_t = (df_tg[df_tg["Colocacion_Terceros"] == "Sí"]
-                    .groupby("Giro_Short").size().reset_index(name="N"))
+        df_tg["Giro_Short"] = df_tg["Giro_Negocio"].apply(giro_short).str.upper()
+        df_con = (df_tg[df_tg["Colocacion_Terceros"] == "Sí"]
+                  .groupby("Giro_Short").size().reset_index(name="N"))
         sin_n    = int((df_tg["Colocacion_Terceros"] != "Sí").sum())
-        lbl_pie  = df_con_t["Giro_Short"].tolist() + ["SIN COLOCACION"]
-        val_pie  = df_con_t["N"].tolist() + [sin_n]
+        lbl_pie  = df_con["Giro_Short"].tolist() + ["SIN COLOCACION"]
+        val_pie  = df_con["N"].tolist() + [sin_n]
         tot_pie  = sum(val_pie)
-        col_pie  = [PALETTE[i % len(PALETTE)] for i in range(len(df_con_t))] + ["#4CAF50"]
+        col_pie  = [PALETTE[i % len(PALETTE)] for i in range(len(df_con))] + ["#4CAF50"]
 
         fig_tc, ax_tc = plt.subplots(figsize=(8, 5.5))
         wedges_t, _, autos_t = ax_tc.pie(
@@ -484,8 +477,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         )
         for at in autos_t:
             at.set_fontweight("bold")
-        ax_tc.legend(wedges_t,
-                     [f"{l}  ({v})" for l, v in zip(lbl_pie, val_pie)],
+        ax_tc.legend(wedges_t, [f"{l}  ({v})" for l, v in zip(lbl_pie, val_pie)],
                      loc="center left", bbox_to_anchor=(1, 0.5), fontsize=8)
         ax_tc.set_title("COLOCACIÓN DE TERCEROS", fontsize=13, fontweight="bold", pad=10)
         plt.tight_layout()
@@ -493,11 +485,10 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         plt.close(fig_tc)
 
     if "Marca_Tercero" in df_f.columns:
-        df_mr = df_f[
-            (df_f["Colocacion_Terceros"] == "Sí") &
-            (df_f["Marca_Tercero"].astype(str).str.strip().str.lower() != "nan") &
-            (df_f["Marca_Tercero"].astype(str).str.strip() != "")
-        ]["Marca_Tercero"].copy()
+        from collections import Counter
+        df_mr = df_f[(df_f["Colocacion_Terceros"] == "Sí") &
+                     (df_f["Marca_Tercero"].astype(str).str.strip().str.lower() != "nan") &
+                     (df_f["Marca_Tercero"].astype(str).str.strip() != "")]["Marca_Tercero"].copy()
         todas_m = []
         for v in df_mr:
             for m in str(v).split(","):
@@ -506,38 +497,30 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
                     todas_m.append(mc)
         if todas_m:
             cteo   = Counter(todas_m)
-            df_mrc = pd.DataFrame(cteo.items(),
-                                  columns=["Marca", "Cantidad"]).sort_values("Cantidad")
+            df_mrc = pd.DataFrame(cteo.items(), columns=["Marca", "Cantidad"]).sort_values("Cantidad")
             tot_m  = df_mrc["Cantidad"].sum()
             df_mrc["Pct"] = (df_mrc["Cantidad"] / tot_m * 100).round(1)
-
-            fig_mr, ax_mr = plt.subplots(
-                figsize=(9, max(3.5, len(df_mrc) * 0.55 + 1.5)))
-            bars_mr = ax_mr.barh(
-                df_mrc["Marca"], df_mrc["Cantidad"],
-                color=[PALETTE[i % len(PALETTE)] for i in range(len(df_mrc))],
-                edgecolor="white")
+            fig_mr, ax_mr = plt.subplots(figsize=(9, max(3.5, len(df_mrc) * 0.55 + 1.5)))
+            bars_mr = ax_mr.barh(df_mrc["Marca"], df_mrc["Cantidad"],
+                                 color=[PALETTE[i % len(PALETTE)] for i in range(len(df_mrc))],
+                                 edgecolor="white")
             max_mr = df_mrc["Cantidad"].max() if not df_mrc.empty else 1
             for bar, cnt, pct in zip(bars_mr, df_mrc["Cantidad"], df_mrc["Pct"]):
                 ax_mr.text(bar.get_width() + max_mr * 0.03,
                            bar.get_y() + bar.get_height() / 2,
-                           f"{cnt}\n({pct}%)",
-                           va="center", ha="left", fontsize=9, fontweight="bold")
+                           f"{cnt}\n({pct}%)", va="center", ha="left", fontsize=9, fontweight="bold")
             chart_style(ax_mr, "MARCAS DE COMPETENCIA EN PDV",
                         xlabel="Número de Visitas con Presencia")
             ax_mr.set_xlim(0, max_mr * 1.45)
             ax_mr.xaxis.grid(True, linestyle="--", alpha=0.45)
             plt.tight_layout()
-            insert_image_bytes(fig_to_bytes(fig_mr), f"G{cs_tc}",
-                               IMG_HALF_W,
+            insert_image_bytes(fig_to_bytes(fig_mr), f"G{cs_tc}", IMG_HALF_W,
                                int(max(3.5, len(df_mrc) * 0.55 + 1.5) * 72))
             plt.close(fig_mr)
 
     row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICO 8+9 — CONTAMINACIÓN | VISIBILIDAD
-    # ══════════════════════════════════════════════════════════════════════
+    # CONTAMINACIÓN + VISIBILIDAD
     row_cur = section_header(row_cur, "CONTAMINACIÓN DE EXHIBIDORES  |  VISIBILIDAD POR EXHIBIDOR", "e05252")
     cs_cv   = row_cur
     row_cur = reserve_rows(row_cur, 24, 15)
@@ -560,26 +543,21 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         wc2  = 0.35
         maxc = max(c_si + c_no) if c_si + c_no else 1
         fig_ct, ax_ct = plt.subplots(figsize=(9, 5))
-        b1 = ax_ct.bar(xc - wc2/2, c_si, wc2,
-                       label="Contaminado", color="#e05252", edgecolor="white")
-        b2 = ax_ct.bar(xc + wc2/2, c_no, wc2,
-                       label="Limpio",      color="#4CAF50", edgecolor="white")
+        b1 = ax_ct.bar(xc - wc2/2, c_si, wc2, label="Contaminado", color="#e05252", edgecolor="white")
+        b2 = ax_ct.bar(xc + wc2/2, c_no, wc2, label="Limpio",      color="#4CAF50", edgecolor="white")
         for bar, cnt, pct in zip(b1, c_si, p_si):
             if cnt > 0:
                 ax_ct.text(bar.get_x() + bar.get_width()/2,
                            bar.get_height() + maxc * 0.025,
-                           f"{cnt}\n({pct}%)",
-                           ha="center", va="bottom", fontsize=10, fontweight="bold")
+                           f"{cnt}\n({pct}%)", ha="center", va="bottom", fontsize=10, fontweight="bold")
         for bar, cnt, pct in zip(b2, c_no, p_no):
             if cnt > 0:
                 ax_ct.text(bar.get_x() + bar.get_width()/2,
                            bar.get_height() + maxc * 0.025,
-                           f"{cnt}\n({pct}%)",
-                           ha="center", va="bottom", fontsize=10, fontweight="bold")
+                           f"{cnt}\n({pct}%)", ha="center", va="bottom", fontsize=10, fontweight="bold")
         ax_ct.set_xticks(xc)
         ax_ct.set_xticklabels(c_lbls, fontsize=10)
-        chart_style(ax_ct, "CONTAMINACIÓN DE EXHIBIDORES",
-                    ylabel="Cantidad de Visitas")
+        chart_style(ax_ct, "CONTAMINACIÓN DE EXHIBIDORES", ylabel="Cantidad de Visitas")
         ax_ct.set_ylim(0, maxc * 1.45)
         ax_ct.legend(fontsize=10)
         plt.tight_layout()
@@ -617,8 +595,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
                                ha="center", va="bottom", fontsize=8, fontweight="bold")
         ax_vi.set_xticks(xv)
         ax_vi.set_xticklabels(v_lbls, fontsize=10)
-        chart_style(ax_vi, "VISIBILIDAD POR EXHIBIDOR",
-                    ylabel="Cantidad de Visitas")
+        chart_style(ax_vi, "VISIBILIDAD POR EXHIBIDOR", ylabel="Cantidad de Visitas")
         ax_vi.set_ylim(0, maxv * 1.5)
         ax_vi.legend(title="Visibilidad", fontsize=10)
         plt.tight_layout()
@@ -627,9 +604,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
 
     row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
-    # GRÁFICOS 10-12 — PRESENCIA DE PRODUCTOS (ancho completo, uno por grupo)
-    # ══════════════════════════════════════════════════════════════════════
+    # PRESENCIA DE PRODUCTOS
     productos_grupos = {
         "BISCUITS": {
             "OREO_34GR": "OREO 34GR", "OREO_54GR": "OREO 54GR", "OREO_ROLLO": "OREO ROLLO",
@@ -666,20 +641,17 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         if not pres_d:
             row_cur += 1
             continue
-
         df_pr = pd.DataFrame(pres_d).sort_values("Pct", ascending=False)
         fig_pr, ax_pr = plt.subplots(figsize=(13, 5))
-        bars_pr = ax_pr.bar(
-            df_pr["Producto"], df_pr["Pct"],
-            color=[PALETTE[i % len(PALETTE)] for i in range(len(df_pr))],
-            edgecolor="white", linewidth=1, zorder=3)
+        bars_pr = ax_pr.bar(df_pr["Producto"], df_pr["Pct"],
+                            color=[PALETTE[i % len(PALETTE)] for i in range(len(df_pr))],
+                            edgecolor="white", linewidth=1, zorder=3)
         for bar, pct, cnt in zip(bars_pr, df_pr["Pct"], df_pr["Cnt"]):
             ax_pr.text(bar.get_x() + bar.get_width()/2,
                        bar.get_height() + 1.8,
                        f"{pct}%\n({cnt}/{total_visitas})",
                        ha="center", va="bottom", fontsize=9, fontweight="bold")
-        chart_style(ax_pr, f"PRESENCIA DE PRODUCTOS — {gp_name}",
-                    ylabel="Presencia %")
+        chart_style(ax_pr, f"PRESENCIA DE PRODUCTOS — {gp_name}", ylabel="Presencia %")
         ax_pr.set_ylim(0, 118)
         plt.xticks(rotation=22, ha="right", fontsize=9)
         plt.tight_layout()
@@ -687,9 +659,7 @@ def generar_dashboard_excel(df_f, ticket_calc, fecha_desde, fecha_hasta, filtro_
         plt.close(fig_pr)
         row_cur += 1
 
-    # ══════════════════════════════════════════════════════════════════════
     # TABLA ÚLTIMAS VISITAS
-    # ══════════════════════════════════════════════════════════════════════
     row_cur = section_header(row_cur, "ÚLTIMAS VISITAS — DETALLE", "1a1a1a")
     cols_tbl = ["Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Vendedor",
                 "Zona", "Efectividad_Soles", "Tiempo_PDC",
@@ -931,21 +901,12 @@ if st.session_state.pagina == "formulario":
         st.markdown("### 🧑‍💼 Ruta")
         col_v1, col_v2, col_v3 = st.columns(3)
         with col_v1:
-            # ── CAMBIO: campo de texto libre para el nombre del vendedor ──
-            vendedor = st.text_input(
-                "Nombre del Vendedor",
-                placeholder="Escribe el nombre completo del vendedor",
-                key="txt_vendedor",
-            )
+            vendedor = st.text_input("Nombre del Vendedor",
+                placeholder="Escribe el nombre completo del vendedor", key="txt_vendedor")
         with col_v2:
             codigo_vendedor = st.text_input("Código de Vendedor", max_chars=8, placeholder="Ej: VEN00001")
         with col_v3:
-            # ── CAMBIO: campo de texto libre para la mesa ──
-            mesa = st.text_input(
-                "Mesa",
-                placeholder="Ej: DJ1, DJ3...",
-                key="txt_mesa",
-            )
+            mesa = st.text_input("Mesa", placeholder="Ej: DJ1, DJ3...", key="txt_mesa")
         ruta_logica = st.text_input("Ruta Lógica", placeholder="Ej: Ruta 01 - Norte")
 
         st.markdown("---")
@@ -1108,6 +1069,7 @@ if st.session_state.pagina == "formulario":
                     "Imagen_Path":         img_path_guardado,
                 }
                 guardar_registro(registro)
+                st.session_state.df_editado = None  # reset editable df on new record
                 st.session_state.pagina = "dashboard"
                 st.rerun()
 
@@ -1140,7 +1102,9 @@ elif st.session_state.pagina == "dashboard":
             with c1:
                 st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
                 if st.button("Confirmar eliminación"):
-                    eliminar_historial(); st.session_state.confirmar_eliminar = False
+                    eliminar_historial()
+                    st.session_state.confirmar_eliminar = False
+                    st.session_state.df_editado = None
                     st.session_state.pagina = "formulario"; st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with c2:
@@ -1250,12 +1214,30 @@ elif st.session_state.pagina == "dashboard":
     st.markdown("---")
 
     mask = (df["Fecha"].dt.date >= fecha_desde) & (df["Fecha"].dt.date <= fecha_hasta)
-    df_f = df[mask].copy()
+    df_f_original = df[mask].copy()
     if filtro_vendedor != "Todos":
-        df_f = df_f[df_f["Vendedor"] == filtro_vendedor]
-    if df_f.empty:
+        df_f_original = df_f_original[df_f_original["Vendedor"] == filtro_vendedor]
+    if df_f_original.empty:
         st.warning("No hay registros en el rango seleccionado.")
         st.stop()
+
+    # ── TABLA EDITABLE — gestión del estado ────────────────────────────────
+    # Si hay un df editado guardado y coincide con el filtro actual, usarlo
+    # Si no, usar el original
+    _cache_key = f"{fecha_desde}_{fecha_hasta}_{filtro_vendedor}"
+    if st.session_state.get("_filter_cache_key") != _cache_key:
+        # El filtro cambió → resetear el df editado
+        st.session_state.df_editado = None
+        st.session_state["_filter_cache_key"] = _cache_key
+
+    # df_f es el dataframe activo para los gráficos
+    if st.session_state.df_editado is not None:
+        df_f = st.session_state.df_editado.copy()
+        for col in ["Efectividad_Soles", "Tiempo_PDC"]:
+            if col in df_f.columns:
+                df_f[col] = pd.to_numeric(df_f[col], errors="coerce").fillna(0)
+    else:
+        df_f = df_f_original.copy()
 
     df_f["Fecha_str"] = df_f["Fecha"].dt.date.astype(str)
     ticket_calc = (df_f.groupby(["Vendedor", "Fecha_str"])
@@ -1352,7 +1334,7 @@ elif st.session_state.pagina == "dashboard":
         if "Giro_Negocio" in df_f.columns:
             df_giro = df_f["Giro_Negocio"].value_counts().reset_index()
             df_giro.columns = ["Giro", "Visitas"]
-            df_giro["Giro_Short"] = df_giro["Giro"].str.replace(r"^\d+ - ", "", regex=True)
+            df_giro["Giro_Short"] = df_giro["Giro"].apply(giro_short)
             total_giro = df_giro["Visitas"].sum()
             df_giro["Label"] = df_giro.apply(
                 lambda r: f"{r['Giro_Short'].upper()}\n{r['Visitas']}  ({round(r['Visitas']/total_giro*100)}%)", axis=1)
@@ -1373,7 +1355,7 @@ elif st.session_state.pagina == "dashboard":
         st.markdown("#### 🏷️ Colocación de Terceros")
         if "Colocacion_Terceros" in df_f.columns and "Giro_Negocio" in df_f.columns:
             df_terc_giro = df_f.copy()
-            df_terc_giro["Giro_Short"] = df_terc_giro["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True).str.upper()
+            df_terc_giro["Giro_Short"] = df_terc_giro["Giro_Negocio"].apply(giro_short).str.upper()
             df_con = df_terc_giro[df_terc_giro["Colocacion_Terceros"] == "Sí"].groupby("Giro_Short").size().reset_index(name="N")
             sin_n = int((df_terc_giro["Colocacion_Terceros"] != "Sí").sum())
             labels_pie = df_con["Giro_Short"].tolist() + ["SIN COLOCACION"]
@@ -1438,18 +1420,128 @@ elif st.session_state.pagina == "dashboard":
 
     st.markdown("---")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SECCIÓN INTERACTIVA: Tipo de Negocio por Exhibidor
+    # Al seleccionar un exhibidor → filtra los gráficos de Contaminación y Visibilidad
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown("#### 🏪 Tipo de Negocio por Exhibidor Colocado")
+    st.markdown('<div class="filter-info">💡 Selecciona un exhibidor en el selector para filtrar los gráficos de Contaminación y Visibilidad según el tipo de negocio donde fue colocado.</div>', unsafe_allow_html=True)
+
+    # Construir dataframe exhibidor × giro (con nombres cortos)
+    exhib_giro_data = []
+    for col_ex, label_ex in exhib_cols_dict.items():
+        if col_ex in df_f.columns and "Giro_Negocio" in df_f.columns:
+            df_ex_sub = df_f[pd.to_numeric(df_f[col_ex], errors="coerce").fillna(0) > 0].copy()
+            if df_ex_sub.empty:
+                continue
+            df_ex_sub["Giro_Short"] = df_ex_sub["Giro_Negocio"].apply(giro_short)
+            for giro, grp in df_ex_sub.groupby("Giro_Short"):
+                exhib_giro_data.append({
+                    "Exhibidor": label_ex,
+                    "Giro": giro,
+                    "Cantidad": len(grp),
+                    "col_key": col_ex,
+                })
+
+    if exhib_giro_data:
+        df_eg = pd.DataFrame(exhib_giro_data)
+
+        # Totales por exhibidor (suma de todos los giros)
+        totales_exhib = df_eg.groupby("Exhibidor")["Cantidad"].sum().reset_index()
+        totales_exhib.columns = ["Exhibidor", "Total"]
+
+        giros_unicos = sorted(df_eg["Giro"].unique().tolist())
+        color_map_giro = {g: PALETTE_GIRO[i % len(PALETTE_GIRO)] for i, g in enumerate(giros_unicos)}
+        df_eg["Etiqueta"] = df_eg["Cantidad"].astype(str)
+
+        # Gráfico apilado con nombres legibles en eje X
+        fig_eg = px.bar(
+            df_eg, x="Exhibidor", y="Cantidad", color="Giro", text="Etiqueta",
+            barmode="stack", color_discrete_map=color_map_giro,
+            title="<b>TIPO DE NEGOCIO POR EXHIBIDOR COLOCADO</b>",
+        )
+        fig_eg.update_traces(textposition="inside", textfont_size=FONT_SIZE_TEXT)
+        fig_eg.update_layout(
+            **base_layout(),
+            title=dict(text="<b>TIPO DE NEGOCIO POR EXHIBIDOR COLOCADO</b>",
+                       font=dict(size=FONT_SIZE_TITLE, family="DM Sans"), x=0.5, xanchor="center"),
+            xaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), tickangle=-15),
+            yaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), title="Cantidad"),
+            legend_title_text="Giro de Negocio",
+            legend=dict(orientation="v", x=1.01, y=1, font=dict(size=12)),
+        )
+        st.plotly_chart(fig_eg, use_container_width=True)
+
+        # Selector de exhibidor para filtrar los siguientes gráficos
+        exhibidores_disponibles = sorted(df_eg["Exhibidor"].unique().tolist())
+        opciones_selector = ["Todos (sin filtro)"] + exhibidores_disponibles
+
+        col_sel1, col_sel2 = st.columns([2, 3])
+        with col_sel1:
+            exhibidor_sel = st.selectbox(
+                "🔍 Filtrar Contaminación y Visibilidad por exhibidor:",
+                opciones_selector,
+                key="sel_exhibidor_filtro",
+            )
+        with col_sel2:
+            if exhibidor_sel != "Todos (sin filtro)":
+                # Mostrar distribución de giros para el exhibidor seleccionado
+                df_giro_sel = df_eg[df_eg["Exhibidor"] == exhibidor_sel]
+                total_sel = df_giro_sel["Cantidad"].sum()
+                giros_info = " | ".join([
+                    f"{row['Giro']}: {row['Cantidad']} ({round(row['Cantidad']/total_sel*100)}%)"
+                    for _, row in df_giro_sel.iterrows()
+                ])
+                st.markdown(f'<div class="filter-info">📊 <b>{exhibidor_sel}</b> — {total_sel} colocaciones: {giros_info}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="filter-info">Mostrando datos de todos los exhibidores combinados.</div>', unsafe_allow_html=True)
+
+        # Determinar el subconjunto de df_f para filtrar los siguientes gráficos
+        if exhibidor_sel != "Todos (sin filtro)":
+            # Encontrar la columna correspondiente al exhibidor seleccionado
+            col_exhib_sel = None
+            for col_key, lbl in exhib_cols_dict.items():
+                if lbl == exhibidor_sel:
+                    col_exhib_sel = col_key
+                    break
+            if col_exhib_sel and col_exhib_sel in df_f.columns:
+                df_cont_vis = df_f[pd.to_numeric(df_f[col_exhib_sel], errors="coerce").fillna(0) > 0].copy()
+                total_cont_vis = len(df_cont_vis)
+                st.caption(f"⚠️ Los gráficos de Contaminación y Visibilidad muestran solo las **{total_cont_vis} visitas** donde se colocó **{exhibidor_sel}**.")
+            else:
+                df_cont_vis = df_f.copy()
+                total_cont_vis = total_visitas
+        else:
+            df_cont_vis = df_f.copy()
+            total_cont_vis = total_visitas
+
+    else:
+        st.info("No hay datos suficientes para este gráfico.")
+        df_cont_vis = df_f.copy()
+        total_cont_vis = total_visitas
+        exhibidor_sel = "Todos (sin filtro)"
+
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CONTAMINACIÓN + VISIBILIDAD — filtrados por exhibidor seleccionado
+    # ══════════════════════════════════════════════════════════════════════
     col_cont1, col_cont2 = st.columns(2)
 
     with col_cont1:
-        st.markdown("#### ⚠️ Contaminación de Exhibidores")
+        titulo_cont = "⚠️ Contaminación de Exhibidores"
+        if exhibidor_sel != "Todos (sin filtro)":
+            titulo_cont += f" — {exhibidor_sel}"
+        st.markdown(f"#### {titulo_cont}")
         cont_data = []
         for col_c, label_c in [("CONT_LEGOS_GC", "LEGOS G&C"), ("CONT_TOBOGAN_RITZ_OREO", "TOBOGÁN Ritz/Oreo"), ("CONT_EXHIB_KIWI", "EXHIB KIWI")]:
-            if col_c in df_f.columns:
-                serie_c = pd.to_numeric(df_f[col_c], errors="coerce").fillna(0)
+            if col_c in df_cont_vis.columns:
+                serie_c = pd.to_numeric(df_cont_vis[col_c], errors="coerce").fillna(0)
                 cont_si  = int(serie_c.sum())
                 cont_no  = len(serie_c) - cont_si
-                pct_si   = cont_si / len(serie_c) * 100 if len(serie_c) > 0 else 0
-                pct_no   = cont_no / len(serie_c) * 100 if len(serie_c) > 0 else 0
+                n_total  = len(serie_c)
+                pct_si   = cont_si / n_total * 100 if n_total > 0 else 0
+                pct_no   = cont_no / n_total * 100 if n_total > 0 else 0
                 cont_data.append({"Exhibidor": label_c, "Estado": "Contaminado", "Cantidad": cont_si, "Pct": round(pct_si, 1)})
                 cont_data.append({"Exhibidor": label_c, "Estado": "Limpio",      "Cantidad": cont_no, "Pct": round(pct_no, 1)})
         if cont_data:
@@ -1465,56 +1557,30 @@ elif st.session_state.pagina == "dashboard":
             st.plotly_chart(fig_cont, use_container_width=True)
 
     with col_cont2:
-        st.markdown("#### 🏪 Tipo de Negocio por Exhibidor Colocado")
-        exhib_giro_data = []
-        for col_ex, label_ex in exhib_cols_dict.items():
-            if col_ex in df_f.columns and "Giro_Negocio" in df_f.columns:
-                df_ex_sub = df_f[pd.to_numeric(df_f[col_ex], errors="coerce").fillna(0) > 0].copy()
-                if df_ex_sub.empty:
-                    continue
-                df_ex_sub["Giro_Short"] = df_ex_sub["Giro_Negocio"].str.replace(r"^\d+ - ", "", regex=True).str.upper()
-                for giro, grp in df_ex_sub.groupby("Giro_Short"):
-                    exhib_giro_data.append({"Exhibidor": label_ex, "Giro": giro, "Cantidad": len(grp)})
-        if exhib_giro_data:
-            df_eg = pd.DataFrame(exhib_giro_data)
-            giros_unicos = df_eg["Giro"].unique().tolist()
-            color_map_eg = {g: PALETTE_GIRO[i % len(PALETTE_GIRO)] for i, g in enumerate(giros_unicos)}
-            df_eg["Etiqueta"] = df_eg["Cantidad"].astype(str)
-            fig_eg = px.bar(df_eg, x="Exhibidor", y="Cantidad", color="Giro", text="Etiqueta",
-                barmode="stack", color_discrete_map=color_map_eg)
-            fig_eg.update_traces(textposition="inside", textfont_size=FONT_SIZE_TEXT)
-            fig_eg.update_layout(**base_layout("TIPO DE NEGOCIO POR EXHIBIDOR"),
-                xaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), tickangle=-20),
-                yaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), title="Cantidad"),
-                legend_title_text="Giro de Negocio",
-                legend=dict(orientation="v", x=1.01, y=1, font=dict(size=12)))
-            st.plotly_chart(fig_eg, use_container_width=True)
-        else:
-            st.info("No hay datos suficientes para este gráfico.")
-
-    st.markdown("---")
-    st.markdown("#### 👁️ Visibilidad por Exhibidor")
-    st.caption("Cantidad de visitas por nivel de visibilidad en cada exhibidor")
-    vis_data = []
-    for col_v, label_v in [("Visibilidad_Legos","LEGOS G&C"),("Visibilidad_Tobogan","TOBOGÁN Ritz/Oreo"),("Visibilidad_Kiwi","EXHIB KIWI"),("Visibilidad_Otros","OTROS")]:
-        if col_v in df_f.columns:
-            serie_v = pd.to_numeric(df_f[col_v], errors="coerce").fillna(0)
-            for nivel, nombre_nivel in [(1, "Alta"), (2, "Media"), (3, "Baja")]:
-                cnt_v = int((serie_v == nivel).sum())
-                pct_v = cnt_v / total_visitas * 100 if total_visitas > 0 else 0
-                vis_data.append({"Exhibidor": label_v, "Nivel": nombre_nivel, "Cantidad": cnt_v, "Pct": round(pct_v, 1)})
-    if vis_data:
-        df_vis = pd.DataFrame(vis_data)
-        df_vis["Etiqueta"] = df_vis.apply(lambda r: f"{r['Cantidad']}  ({r['Pct']}%)" if r["Cantidad"] > 0 else "", axis=1)
-        fig_vis = px.bar(df_vis, x="Exhibidor", y="Cantidad", color="Nivel", text="Etiqueta",
-            barmode="group", color_discrete_map={"Alta": "#4CAF50", "Media": "#FFC107", "Baja": "#e05252"},
-            category_orders={"Nivel": ["Alta", "Media", "Baja"]})
-        fig_vis.update_traces(textposition="outside", textfont_size=FONT_SIZE_TEXT)
-        fig_vis.update_layout(**base_layout("VISIBILIDAD POR EXHIBIDOR"),
-            xaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS)),
-            yaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), title="Cantidad de visitas"),
-            legend_title_text="Visibilidad", legend=dict(orientation="h", y=-0.2, font=dict(size=FONT_SIZE_AXIS)))
-        st.plotly_chart(fig_vis, use_container_width=True)
+        titulo_vis = "👁️ Visibilidad por Exhibidor"
+        if exhibidor_sel != "Todos (sin filtro)":
+            titulo_vis += f" — {exhibidor_sel}"
+        st.markdown(f"#### {titulo_vis}")
+        vis_data = []
+        for col_v, label_v in [("Visibilidad_Legos","LEGOS G&C"),("Visibilidad_Tobogan","TOBOGÁN Ritz/Oreo"),("Visibilidad_Kiwi","EXHIB KIWI"),("Visibilidad_Otros","OTROS")]:
+            if col_v in df_cont_vis.columns:
+                serie_v = pd.to_numeric(df_cont_vis[col_v], errors="coerce").fillna(0)
+                for nivel, nombre_nivel in [(1, "Alta"), (2, "Media"), (3, "Baja")]:
+                    cnt_v = int((serie_v == nivel).sum())
+                    pct_v = cnt_v / total_cont_vis * 100 if total_cont_vis > 0 else 0
+                    vis_data.append({"Exhibidor": label_v, "Nivel": nombre_nivel, "Cantidad": cnt_v, "Pct": round(pct_v, 1)})
+        if vis_data:
+            df_vis = pd.DataFrame(vis_data)
+            df_vis["Etiqueta"] = df_vis.apply(lambda r: f"{r['Cantidad']}  ({r['Pct']}%)" if r["Cantidad"] > 0 else "", axis=1)
+            fig_vis = px.bar(df_vis, x="Exhibidor", y="Cantidad", color="Nivel", text="Etiqueta",
+                barmode="group", color_discrete_map={"Alta": "#4CAF50", "Media": "#FFC107", "Baja": "#e05252"},
+                category_orders={"Nivel": ["Alta", "Media", "Baja"]})
+            fig_vis.update_traces(textposition="outside", textfont_size=FONT_SIZE_TEXT)
+            fig_vis.update_layout(**base_layout("VISIBILIDAD POR EXHIBIDOR"),
+                xaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS)),
+                yaxis=dict(tickfont=dict(size=FONT_SIZE_AXIS), title="Cantidad de visitas"),
+                legend_title_text="Visibilidad", legend=dict(orientation="h", y=-0.2, font=dict(size=FONT_SIZE_AXIS)))
+            st.plotly_chart(fig_vis, use_container_width=True)
 
     st.markdown("---")
     col_g4, col_g5 = st.columns(2)
@@ -1552,7 +1618,7 @@ elif st.session_state.pagina == "dashboard":
                         hoverinfo="skip", showlegend=False, name=f"sombra{zona}"))
                 for zona, grp in df_map.groupby("Zona"):
                     ch = zona_color.get(zona, "#888888")
-                    giro_col = grp["Giro_Negocio"].str.replace(r"^\d+ - ","",regex=True) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
+                    giro_col = grp["Giro_Negocio"].apply(giro_short) if "Giro_Negocio" in grp.columns else grp.index.astype(str)
                     fig_map.add_trace(go.Scattermapbox(lat=grp["Latitud"].tolist(), lon=grp["Longitud"].tolist(),
                         mode="markers", marker=dict(size=13, color=ch), name=zona,
                         text=grp["Nombre_Cliente"].tolist(),
@@ -1606,14 +1672,137 @@ elif st.session_state.pagina == "dashboard":
     with tab_gyc:
         render_presencia_bar({"TRIDENT_5s":"TRIDENT 5s","TRIDENT_EVUP":"TRIDENT EVUP","HALLS_12s":"HALLS 12s","HALLS_100s":"HALLS 100s","CHICLETS_2S":"CHICLETS 2S","BUBBALOO":"BUBBALOO"}, df_f, total_visitas, PALETTE_PRODUCTOS)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # TABLA EDITABLE — Los cambios actualizan los gráficos al guardar
+    # ══════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("#### 📋 Últimas Visitas")
-    cols_tabla = ["Fecha","Codigo_PDC","Nombre_Cliente","Giro_Negocio","Vendedor","Codigo_Vendedor",
-                  "Mesa","Zona","Efectividad_Soles","Tiempo_PDC",
-                  "Visibilidad_Legos","Visibilidad_Tobogan","Visibilidad_Kiwi","Visibilidad_Otros",
-                  "Colocacion_Terceros","Marca_Tercero"]
-    cols_existentes = [c for c in cols_tabla if c in df_f.columns]
-    st.dataframe(df_f[cols_existentes].sort_values("Fecha", ascending=False).head(50).reset_index(drop=True), use_container_width=True)
+    st.markdown("#### 📋 Tabla de Visitas — Editable")
+    st.markdown('<div class="edit-info">✏️ <b>Puedes editar los datos directamente en la tabla.</b> Haz doble clic en cualquier celda para modificarla. Cuando termines, presiona <b>"✅ Aplicar cambios y actualizar gráficos"</b> para que los gráficos reflejen las ediciones. Los cambios también se guardan en el archivo CSV.</div>', unsafe_allow_html=True)
+
+    # Columnas editables que se muestran en la tabla
+    cols_editables = [
+        "Fecha", "Codigo_PDC", "Nombre_Cliente", "Giro_Negocio",
+        "Vendedor", "Codigo_Vendedor", "Mesa", "Zona",
+        "Efectividad_Soles", "Tiempo_PDC",
+        "Visibilidad_Legos", "Visibilidad_Tobogan", "Visibilidad_Kiwi", "Visibilidad_Otros",
+        "Colocacion_Terceros", "Marca_Tercero",
+        "LEGOS_GC", "TOBOGAN_RITZ_OREO", "EXHIB_KIWI", "RITRAZ", "MEGA_KIWI", "EXHIBIDOR_OTROS",
+        "CONT_LEGOS_GC", "CONT_TOBOGAN_RITZ_OREO", "CONT_EXHIB_KIWI",
+    ]
+    cols_mostrar = [c for c in cols_editables if c in df_f.columns]
+
+    # Preparar datos para el editor
+    df_para_editar = df_f[cols_mostrar].copy()
+    df_para_editar["Fecha"] = df_para_editar["Fecha"].dt.strftime("%Y-%m-%d") if pd.api.types.is_datetime64_any_dtype(df_para_editar["Fecha"]) else df_para_editar["Fecha"].astype(str)
+
+    # Configuración de columnas para el editor
+    column_config = {
+        "Fecha": st.column_config.TextColumn("Fecha", help="Formato YYYY-MM-DD"),
+        "Codigo_PDC": st.column_config.TextColumn("Código PDC"),
+        "Nombre_Cliente": st.column_config.TextColumn("Cliente"),
+        "Giro_Negocio": st.column_config.SelectboxColumn(
+            "Giro de Negocio",
+            options=[
+                "1 - Bodega",
+                "2 - Minimarket / Tiendas",
+                "3 - Kiosko",
+                "4 - Especializados (Panificadora, Horeca, Internet...)",
+                "5 - Otros (Puesto de mercado, Centros Educativos...)",
+            ],
+        ),
+        "Vendedor": st.column_config.TextColumn("Vendedor"),
+        "Codigo_Vendedor": st.column_config.TextColumn("Cód. Vendedor"),
+        "Mesa": st.column_config.TextColumn("Mesa"),
+        "Zona": st.column_config.TextColumn("Zona"),
+        "Efectividad_Soles": st.column_config.NumberColumn("Efectividad (S/)", min_value=0.0, format="%.2f"),
+        "Tiempo_PDC": st.column_config.NumberColumn("Tiempo PDC (min)", min_value=0, step=1),
+        "Visibilidad_Legos":   st.column_config.SelectboxColumn("Vis. LEGOS",   options=[1, 2, 3]),
+        "Visibilidad_Tobogan": st.column_config.SelectboxColumn("Vis. TOBOGÁN", options=[1, 2, 3]),
+        "Visibilidad_Kiwi":    st.column_config.SelectboxColumn("Vis. KIWI",    options=[1, 2, 3]),
+        "Visibilidad_Otros":   st.column_config.SelectboxColumn("Vis. OTROS",   options=[1, 2, 3]),
+        "Colocacion_Terceros": st.column_config.SelectboxColumn("¿Terceros?", options=["No", "Sí"]),
+        "Marca_Tercero": st.column_config.TextColumn("Marcas Terceros"),
+        "LEGOS_GC":          st.column_config.CheckboxColumn("LEGOS G&C"),
+        "TOBOGAN_RITZ_OREO": st.column_config.CheckboxColumn("TOBOGÁN"),
+        "EXHIB_KIWI":        st.column_config.CheckboxColumn("EXHIB KIWI"),
+        "RITRAZ":            st.column_config.CheckboxColumn("RITRAZ"),
+        "MEGA_KIWI":         st.column_config.CheckboxColumn("MEGA KIWI"),
+        "EXHIBIDOR_OTROS":   st.column_config.CheckboxColumn("EXH. OTROS"),
+        "CONT_LEGOS_GC":          st.column_config.CheckboxColumn("Cont. LEGOS"),
+        "CONT_TOBOGAN_RITZ_OREO": st.column_config.CheckboxColumn("Cont. TOBOGÁN"),
+        "CONT_EXHIB_KIWI":        st.column_config.CheckboxColumn("Cont. KIWI"),
+    }
+
+    # Para columnas booleanas (checkboxes), convertir 0/1 a bool
+    bool_cols = ["LEGOS_GC","TOBOGAN_RITZ_OREO","EXHIB_KIWI","RITRAZ","MEGA_KIWI","EXHIBIDOR_OTROS",
+                 "CONT_LEGOS_GC","CONT_TOBOGAN_RITZ_OREO","CONT_EXHIB_KIWI"]
+    for bc in bool_cols:
+        if bc in df_para_editar.columns:
+            df_para_editar[bc] = pd.to_numeric(df_para_editar[bc], errors="coerce").fillna(0).astype(bool)
+
+    edited_df = st.data_editor(
+        df_para_editar,
+        column_config={k: v for k, v in column_config.items() if k in df_para_editar.columns},
+        use_container_width=True,
+        hide_index=True,
+        num_rows="dynamic",
+        key="tabla_editable_principal",
+    )
+
+    col_apply1, col_apply2, col_apply3 = st.columns([2, 2, 3])
+    with col_apply1:
+        if st.button("✅ Aplicar cambios y actualizar gráficos", use_container_width=True, key="btn_apply_edit"):
+            # Convertir bools de vuelta a int
+            df_aplicado = edited_df.copy()
+            for bc in bool_cols:
+                if bc in df_aplicado.columns:
+                    df_aplicado[bc] = df_aplicado[bc].astype(int)
+            # Reconstruir fechas
+            df_aplicado["Fecha"] = pd.to_datetime(df_aplicado["Fecha"], errors="coerce")
+
+            # Actualizar el CSV: reemplazar las filas del rango filtrado
+            df_completo = cargar_datos()
+            df_completo["Fecha"] = pd.to_datetime(df_completo["Fecha"])
+
+            # Identificar índices originales del filtro
+            mask_orig = (df_completo["Fecha"].dt.date >= fecha_desde) & (df_completo["Fecha"].dt.date <= fecha_hasta)
+            if filtro_vendedor != "Todos":
+                mask_orig = mask_orig & (df_completo["Vendedor"] == filtro_vendedor)
+
+            # Alinear las columnas del df_aplicado con el df_completo
+            df_aplicado_full = df_completo[mask_orig].copy()
+            for col_ed in df_aplicado.columns:
+                if col_ed in df_aplicado_full.columns:
+                    df_aplicado_full[col_ed] = df_aplicado[col_ed].values[:len(df_aplicado_full)]
+
+            df_completo.loc[mask_orig, df_aplicado.columns.tolist()] = df_aplicado_full[df_aplicado.columns.tolist()].values
+            df_completo.to_csv(CSV_FILE, index=False)
+
+            # Guardar el df editado en session_state para que los gráficos lo usen
+            df_para_graficos = df_aplicado.copy()
+            df_para_graficos["Fecha"] = pd.to_datetime(df_para_graficos["Fecha"], errors="coerce")
+            for col_num in ["Efectividad_Soles", "Tiempo_PDC"]:
+                if col_num in df_para_graficos.columns:
+                    df_para_graficos[col_num] = pd.to_numeric(df_para_graficos[col_num], errors="coerce").fillna(0)
+            # Añadir columnas que no están en la tabla editable pero sí en df_f
+            for col_falt in df_f.columns:
+                if col_falt not in df_para_graficos.columns:
+                    df_para_graficos[col_falt] = df_f[col_falt].values[:len(df_para_graficos)]
+            st.session_state.df_editado = df_para_graficos
+            st.success("✅ Cambios aplicados. Los gráficos se actualizarán al recargar.")
+            st.rerun()
+
+    with col_apply2:
+        if st.session_state.df_editado is not None:
+            if st.button("↩️ Restaurar datos originales", use_container_width=True, key="btn_restore"):
+                st.session_state.df_editado = None
+                st.rerun()
+
+    with col_apply3:
+        if st.session_state.df_editado is not None:
+            st.markdown('<span style="color:#6a9e4f;font-size:13px;">✔ Mostrando datos editados</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span style="color:#aaa;font-size:13px;">Mostrando datos originales del CSV</span>', unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("#### ⬇️ Descargas")
