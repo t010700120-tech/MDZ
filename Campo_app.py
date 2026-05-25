@@ -884,117 +884,118 @@ if st.session_state.pagina == "formulario":
     st.markdown("---")
 
     # ══════════════════════════════════════════════════════════════════════
-    # SELECTORES FUERA DEL FORM — Vendedor → Cliente (cascada reactiva)
+    # TABLA MADRE — carga desde Excel Base_Clientes_Vendedor.xlsx
     # ══════════════════════════════════════════════════════════════════════
-    df_hist = cargar_datos()
+    TABLA_MADRE_FILE = "Base_Clientes_Vendedor.xlsx"
 
+    @st.cache_data(show_spinner=False)
+    def cargar_tabla_madre():
+        if os.path.exists(TABLA_MADRE_FILE):
+            df_tm = pd.read_excel(TABLA_MADRE_FILE, sheet_name="Tabla _ Madre", dtype=str)
+            df_tm.columns = [c.strip() for c in df_tm.columns]
+            for col in df_tm.columns:
+                df_tm[col] = df_tm[col].fillna("").str.strip()
+            return df_tm
+        return pd.DataFrame()
+
+    df_madre = cargar_tabla_madre()
+
+    # ── SECCIÓN RUTA ───────────────────────────────────────────────────────
     st.markdown("### 🧑‍💼 Ruta")
-    vendedores_lista = sorted(df_hist["Vendedor"].dropna().unique().tolist()) if not df_hist.empty else []
-    vendedores_opciones = ["✏️ Escribir nuevo vendedor..."] + vendedores_lista
 
-    col_sv1, col_sv2, col_sv3 = st.columns(3)
-    with col_sv1:
-        sel_vendedor = st.selectbox(
-            "Nombre del Vendedor",
-            vendedores_opciones,
-            key="sel_vendedor_drop",
-        )
-        if sel_vendedor == "✏️ Escribir nuevo vendedor...":
-            vendedor = st.text_input(
-                "Escribir nombre del vendedor",
-                placeholder="Nombre completo...",
-                key="txt_vendedor_nuevo",
+    if df_madre.empty:
+        st.warning("⚠️ No se encontró el archivo Base_Clientes_Vendedor.xlsx en la carpeta de la app.")
+        vendedor        = ""
+        codigo_vendedor = ""
+        mesa            = ""
+        ruta_logica     = ""
+        clientes_del_vendedor = []
+    else:
+        # Construir lista única de vendedores: "CODIGO_VENDEDOR — nombre_vendedor"
+        df_vend_uniq = (df_madre[["CODIGO_VENDEDOR", "nombre_vendedor", "RUTA_LOGICA"]]
+                        .drop_duplicates(subset=["CODIGO_VENDEDOR"])
+                        .sort_values("nombre_vendedor"))
+        opciones_vendedor = [
+            f"{row['CODIGO_VENDEDOR']} — {row['nombre_vendedor']}"
+            for _, row in df_vend_uniq.iterrows()
+        ]
+
+        col_sv1, col_sv2 = st.columns([3, 1])
+        with col_sv1:
+            sel_vendedor_str = st.selectbox(
+                "Vendedor",
+                opciones_vendedor,
+                key="sel_vendedor_drop",
+                help="Selecciona el vendedor de la Tabla Madre",
             )
-        else:
-            vendedor = sel_vendedor
-    with col_sv2:
-        codigo_vendedor_pre = ""
-        if vendedor and not df_hist.empty:
-            fila_vend = df_hist[df_hist["Vendedor"] == vendedor]
-            if not fila_vend.empty and "Codigo_Vendedor" in fila_vend.columns:
-                codigo_vendedor_pre = str(fila_vend.iloc[0]["Codigo_Vendedor"] or "")
-        codigo_vendedor = st.text_input(
-            "Código de Vendedor",
-            value=codigo_vendedor_pre,
-            max_chars=8,
-            placeholder="Ej: VEN00001",
-            key="cod_vend_input",
-        )
-    with col_sv3:
-        mesa_pre = ""
-        if vendedor and not df_hist.empty:
-            fila_vend = df_hist[df_hist["Vendedor"] == vendedor]
-            if not fila_vend.empty and "Mesa" in fila_vend.columns:
-                mesa_pre = str(fila_vend.iloc[0]["Mesa"] or "")
-        mesa = st.text_input(
-            "Mesa",
-            value=mesa_pre,
-            placeholder="Ej: DJ1, DJ3...",
-            key="txt_mesa_input",
-        )
-    ruta_logica_pre = ""
-    ruta_logica = st.text_input("Ruta Lógica", value=ruta_logica_pre, placeholder="Ej: Ruta 01 - Norte", key="ruta_logica_input")
+        # Extraer datos del vendedor seleccionado
+        cod_vend_sel = sel_vendedor_str.split(" — ")[0].strip()
+        fila_vend = df_vend_uniq[df_vend_uniq["CODIGO_VENDEDOR"] == cod_vend_sel]
+        vendedor        = fila_vend.iloc[0]["nombre_vendedor"] if not fila_vend.empty else ""
+        codigo_vendedor = cod_vend_sel
+        ruta_logica     = fila_vend.iloc[0]["RUTA_LOGICA"] if not fila_vend.empty else ""
+        mesa            = ruta_logica   # Mesa = RUTA_LOGICA
+
+        with col_sv2:
+            st.text_input("Código Vendedor", value=codigo_vendedor, disabled=True, key="cod_vend_show")
+
+        col_sv3, col_sv4 = st.columns(2)
+        with col_sv3:
+            st.text_input("Nombre Vendedor", value=vendedor, disabled=True, key="vend_nombre_show")
+        with col_sv4:
+            st.text_input("Ruta Lógica / Mesa", value=ruta_logica, disabled=True, key="ruta_show")
+
+        # ── CLIENTES del vendedor seleccionado ────────────────────────────
+        df_clientes_vend = df_madre[df_madre["CODIGO_VENDEDOR"] == cod_vend_sel].copy()
+        clientes_del_vendedor = []
+        for _, row in df_clientes_vend.iterrows():
+            etiqueta = f"{row['CODIGO_CLIENTE']} — {row['cnomb_clie']}"
+            clientes_del_vendedor.append({
+                "etiqueta":       etiqueta,
+                "codigo_pdc":     row["CODIGO_CLIENTE"],
+                "nombre_cliente": row["cnomb_clie"],
+                "zona":           row.get("cdesc_ruta", ""),
+                "giro_negocio":   "Selecciona...",
+            })
 
     st.markdown("---")
 
-    # ── Selector de Cliente filtrado por vendedor ──────────────────────────
+    # ── SECCIÓN CLIENTE ────────────────────────────────────────────────────
     st.markdown("### 🏪 Datos del Cliente")
-
-    clientes_del_vendedor = []
-    if vendedor and not df_hist.empty:
-        df_vend_hist = df_hist[df_hist["Vendedor"] == vendedor].copy()
-        # Agrupar por PDC para obtener la última visita (nombre + código más reciente)
-        if not df_vend_hist.empty:
-            df_vend_hist["Fecha"] = pd.to_datetime(df_vend_hist["Fecha"])
-            df_ult = (df_vend_hist.sort_values("Fecha", ascending=False)
-                      .drop_duplicates(subset=["Codigo_PDC"])
-                      [["Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Zona"]]
-                      .dropna(subset=["Codigo_PDC"]))
-            for _, row in df_ult.iterrows():
-                etiqueta = f"{row['Codigo_PDC']} — {row['Nombre_Cliente']}"
-                clientes_del_vendedor.append({
-                    "etiqueta": etiqueta,
-                    "codigo_pdc": str(row["Codigo_PDC"]),
-                    "nombre_cliente": str(row["Nombre_Cliente"]),
-                    "giro_negocio": str(row.get("Giro_Negocio", "")),
-                    "zona": str(row.get("Zona", "")),
-                })
 
     opciones_cliente = ["✏️ Nuevo cliente (no registrado)"] + [c["etiqueta"] for c in clientes_del_vendedor]
 
-    col_sc1, col_sc2 = st.columns([3, 1])
-    with col_sc1:
-        sel_cliente = st.selectbox(
-            "Seleccionar Cliente",
-            opciones_cliente,
-            key="sel_cliente_drop",
-            help="Filtra los clientes visitados por este vendedor. Elige 'Nuevo cliente' para ingresar uno nuevo.",
-        )
+    sel_cliente = st.selectbox(
+        "Seleccionar Cliente",
+        opciones_cliente,
+        key="sel_cliente_drop",
+        help="Lista de clientes asignados a este vendedor según la Tabla Madre.",
+    )
 
-    # Determinar valores pre-cargados según selección
     if sel_cliente == "✏️ Nuevo cliente (no registrado)":
         prefill_codigo   = ""
         prefill_nombre   = ""
-        prefill_giro     = "Selecciona..."
         prefill_zona     = ""
+        prefill_giro     = "Selecciona..."
         es_cliente_nuevo = True
     else:
         match = next((c for c in clientes_del_vendedor if c["etiqueta"] == sel_cliente), None)
-        prefill_codigo   = match["codigo_pdc"]   if match else ""
+        prefill_codigo   = match["codigo_pdc"]     if match else ""
         prefill_nombre   = match["nombre_cliente"] if match else ""
-        prefill_giro     = match["giro_negocio"]  if match else "Selecciona..."
-        prefill_zona     = match["zona"]          if match else ""
+        prefill_zona     = match["zona"]           if match else ""
+        prefill_giro     = "Selecciona..."
         es_cliente_nuevo = False
 
     with st.form("form_visita", clear_on_submit=False):
 
         col1, col2, col3 = st.columns(3)
-        with col1: fecha = st.date_input("Fecha de Visita", value=date.today())
+        with col1:
+            fecha = st.date_input("Fecha de Visita", value=date.today())
         with col2:
             codigo_pdc = st.text_input(
-                "Código PDC (8 dígitos)",
+                "Código PDC",
                 value=prefill_codigo,
-                max_chars=8,
+                max_chars=10,
                 placeholder="Ej: 00000001",
                 disabled=not es_cliente_nuevo,
             )
@@ -1006,7 +1007,7 @@ if st.session_state.pagina == "formulario":
                 disabled=not es_cliente_nuevo,
             )
 
-        # ── Si no hay nombre de cliente, mostrar campo alternativo ──────────
+        # ── Si es nuevo y sin nombre → campo alternativo ───────────────────
         if es_cliente_nuevo and not nombre_cliente.strip():
             st.markdown(
                 '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;'
@@ -1048,22 +1049,26 @@ if st.session_state.pagina == "formulario":
         with col4:
             giro_negocio = st.selectbox("Giro de Negocio", giro_opciones, index=giro_index)
         with col5:
-            zona = st.text_input("Zona", value=prefill_zona, placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO...")
+            zona = st.text_input(
+                "Zona / Ruta",
+                value=prefill_zona,
+                placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO...",
+                disabled=not es_cliente_nuevo,
+            )
 
         latitud  = st.session_state.gps_lat
         longitud = st.session_state.gps_lon
 
-        # Vendedor y Mesa vienen de fuera del form (session state ya los tiene)
+        # Resumen de ruta (solo lectura dentro del form)
         st.markdown("---")
         st.markdown("### 🧑‍💼 Ruta (confirmación)")
         col_rv1, col_rv2, col_rv3 = st.columns(3)
         with col_rv1:
-            st.text_input("Vendedor (seleccionado)", value=vendedor, disabled=True, key="vend_confirm")
+            st.text_input("Vendedor", value=vendedor, disabled=True, key="vend_confirm")
         with col_rv2:
-            st.text_input("Código Vendedor (confirmación)", value=codigo_vendedor, disabled=True, key="codvend_confirm")
+            st.text_input("Código Vendedor", value=codigo_vendedor, disabled=True, key="codvend_confirm")
         with col_rv3:
-            st.text_input("Mesa (confirmación)", value=mesa, disabled=True, key="mesa_confirm")
-        ruta_logica_form = st.text_input("Ruta Lógica (confirmación)", value=ruta_logica, disabled=True, key="ruta_confirm")
+            st.text_input("Mesa / Ruta Lógica", value=mesa, disabled=True, key="mesa_confirm")
 
         st.markdown("---")
         st.markdown("### 🍪 Presencia Biscuits")
