@@ -883,20 +883,135 @@ if st.session_state.pagina == "formulario":
 
     st.markdown("---")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SELECTORES FUERA DEL FORM — Vendedor → Cliente (cascada reactiva)
+    # ══════════════════════════════════════════════════════════════════════
+    df_hist = cargar_datos()
+
+    st.markdown("### 🧑‍💼 Ruta")
+    vendedores_lista = sorted(df_hist["Vendedor"].dropna().unique().tolist()) if not df_hist.empty else []
+    vendedores_opciones = ["✏️ Escribir nuevo vendedor..."] + vendedores_lista
+
+    col_sv1, col_sv2, col_sv3 = st.columns(3)
+    with col_sv1:
+        sel_vendedor = st.selectbox(
+            "Nombre del Vendedor",
+            vendedores_opciones,
+            key="sel_vendedor_drop",
+        )
+        if sel_vendedor == "✏️ Escribir nuevo vendedor...":
+            vendedor = st.text_input(
+                "Escribir nombre del vendedor",
+                placeholder="Nombre completo...",
+                key="txt_vendedor_nuevo",
+            )
+        else:
+            vendedor = sel_vendedor
+    with col_sv2:
+        codigo_vendedor_pre = ""
+        if vendedor and not df_hist.empty:
+            fila_vend = df_hist[df_hist["Vendedor"] == vendedor]
+            if not fila_vend.empty and "Codigo_Vendedor" in fila_vend.columns:
+                codigo_vendedor_pre = str(fila_vend.iloc[0]["Codigo_Vendedor"] or "")
+        codigo_vendedor = st.text_input(
+            "Código de Vendedor",
+            value=codigo_vendedor_pre,
+            max_chars=8,
+            placeholder="Ej: VEN00001",
+            key="cod_vend_input",
+        )
+    with col_sv3:
+        mesa_pre = ""
+        if vendedor and not df_hist.empty:
+            fila_vend = df_hist[df_hist["Vendedor"] == vendedor]
+            if not fila_vend.empty and "Mesa" in fila_vend.columns:
+                mesa_pre = str(fila_vend.iloc[0]["Mesa"] or "")
+        mesa = st.text_input(
+            "Mesa",
+            value=mesa_pre,
+            placeholder="Ej: DJ1, DJ3...",
+            key="txt_mesa_input",
+        )
+    ruta_logica_pre = ""
+    ruta_logica = st.text_input("Ruta Lógica", value=ruta_logica_pre, placeholder="Ej: Ruta 01 - Norte", key="ruta_logica_input")
+
+    st.markdown("---")
+
+    # ── Selector de Cliente filtrado por vendedor ──────────────────────────
+    st.markdown("### 🏪 Datos del Cliente")
+
+    clientes_del_vendedor = []
+    if vendedor and not df_hist.empty:
+        df_vend_hist = df_hist[df_hist["Vendedor"] == vendedor].copy()
+        # Agrupar por PDC para obtener la última visita (nombre + código más reciente)
+        if not df_vend_hist.empty:
+            df_vend_hist["Fecha"] = pd.to_datetime(df_vend_hist["Fecha"])
+            df_ult = (df_vend_hist.sort_values("Fecha", ascending=False)
+                      .drop_duplicates(subset=["Codigo_PDC"])
+                      [["Codigo_PDC", "Nombre_Cliente", "Giro_Negocio", "Zona"]]
+                      .dropna(subset=["Codigo_PDC"]))
+            for _, row in df_ult.iterrows():
+                etiqueta = f"{row['Codigo_PDC']} — {row['Nombre_Cliente']}"
+                clientes_del_vendedor.append({
+                    "etiqueta": etiqueta,
+                    "codigo_pdc": str(row["Codigo_PDC"]),
+                    "nombre_cliente": str(row["Nombre_Cliente"]),
+                    "giro_negocio": str(row.get("Giro_Negocio", "")),
+                    "zona": str(row.get("Zona", "")),
+                })
+
+    opciones_cliente = ["✏️ Nuevo cliente (no registrado)"] + [c["etiqueta"] for c in clientes_del_vendedor]
+
+    col_sc1, col_sc2 = st.columns([3, 1])
+    with col_sc1:
+        sel_cliente = st.selectbox(
+            "Seleccionar Cliente",
+            opciones_cliente,
+            key="sel_cliente_drop",
+            help="Filtra los clientes visitados por este vendedor. Elige 'Nuevo cliente' para ingresar uno nuevo.",
+        )
+
+    # Determinar valores pre-cargados según selección
+    if sel_cliente == "✏️ Nuevo cliente (no registrado)":
+        prefill_codigo   = ""
+        prefill_nombre   = ""
+        prefill_giro     = "Selecciona..."
+        prefill_zona     = ""
+        es_cliente_nuevo = True
+    else:
+        match = next((c for c in clientes_del_vendedor if c["etiqueta"] == sel_cliente), None)
+        prefill_codigo   = match["codigo_pdc"]   if match else ""
+        prefill_nombre   = match["nombre_cliente"] if match else ""
+        prefill_giro     = match["giro_negocio"]  if match else "Selecciona..."
+        prefill_zona     = match["zona"]          if match else ""
+        es_cliente_nuevo = False
+
     with st.form("form_visita", clear_on_submit=False):
-        st.markdown("### 🏪 Datos del Cliente")
+
         col1, col2, col3 = st.columns(3)
         with col1: fecha = st.date_input("Fecha de Visita", value=date.today())
-        with col2: codigo_pdc = st.text_input("Código PDC (8 dígitos)", max_chars=8, placeholder="Ej: 00000001")
-        with col3: nombre_cliente = st.text_input("Nombre del Cliente", placeholder="Ej: Bodega Central")
+        with col2:
+            codigo_pdc = st.text_input(
+                "Código PDC (8 dígitos)",
+                value=prefill_codigo,
+                max_chars=8,
+                placeholder="Ej: 00000001",
+                disabled=not es_cliente_nuevo,
+            )
+        with col3:
+            nombre_cliente = st.text_input(
+                "Nombre del Cliente",
+                value=prefill_nombre,
+                placeholder="Ej: Bodega Central",
+                disabled=not es_cliente_nuevo,
+            )
 
         # ── Si no hay nombre de cliente, mostrar campo alternativo ──────────
-        nombre_alternativo = ""
-        if not nombre_cliente.strip():
+        if es_cliente_nuevo and not nombre_cliente.strip():
             st.markdown(
                 '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;'
                 'padding:8px 14px;font-size:13px;color:#7a6000;margin-bottom:8px;">'
-                '⚠️ Si el cliente no tiene nombre registrado, completa el campo alternativo a continuación.'
+                '⚠️ Si el cliente no tiene nombre registrado, completa el campo alternativo.'
                 '</div>',
                 unsafe_allow_html=True,
             )
@@ -904,7 +1019,7 @@ if st.session_state.pagina == "formulario":
             with col_alt1:
                 nombre_alternativo = st.text_input(
                     "Descripción / Nombre alternativo",
-                    placeholder="Ej: Bodega esquina Jr. Las Flores, Puesto 12 mercado...",
+                    placeholder="Ej: Bodega esquina Jr. Las Flores...",
                     key="nombre_alt",
                 )
             with col_alt2:
@@ -913,7 +1028,6 @@ if st.session_state.pagina == "formulario":
                     placeholder="Ej: frente al parque, piso 2...",
                     key="ref_extra",
                 )
-            # Construir nombre final combinando ambos campos
             if nombre_alternativo.strip() and referencia_extra.strip():
                 nombre_cliente_final = f"{nombre_alternativo.strip()} — {referencia_extra.strip()}"
             elif nombre_alternativo.strip():
@@ -921,39 +1035,35 @@ if st.session_state.pagina == "formulario":
             else:
                 nombre_cliente_final = "SIN NOMBRE"
         else:
-            nombre_cliente_final = nombre_cliente.strip()
+            nombre_cliente_final = nombre_cliente.strip() if nombre_cliente.strip() else prefill_nombre
+
+        giro_opciones = [
+            "Selecciona...", "1 - Bodega", "2 - Minimarket / Tiendas", "3 - Kiosko",
+            "4 - Especializados (Panificadora, Horeca, Internet...)",
+            "5 - Otros (Puesto de mercado, Centros Educativos...)"
+        ]
+        giro_index = giro_opciones.index(prefill_giro) if prefill_giro in giro_opciones else 0
 
         col4, col5 = st.columns(2)
         with col4:
-            giro_negocio = st.selectbox("Giro de Negocio", [
-                "Selecciona...", "1 - Bodega", "2 - Minimarket / Tiendas", "3 - Kiosko",
-                "4 - Especializados (Panificadora, Horeca, Internet...)",
-                "5 - Otros (Puesto de mercado, Centros Educativos...)"
-            ])
+            giro_negocio = st.selectbox("Giro de Negocio", giro_opciones, index=giro_index)
         with col5:
-            zona = st.text_input("Zona", placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO...")
+            zona = st.text_input("Zona", value=prefill_zona, placeholder="Ej: TRUJILLO CENTRO, VICTOR LARCO...")
 
         latitud  = st.session_state.gps_lat
         longitud = st.session_state.gps_lon
 
+        # Vendedor y Mesa vienen de fuera del form (session state ya los tiene)
         st.markdown("---")
-        st.markdown("### 🧑‍💼 Ruta")
-        col_v1, col_v2, col_v3 = st.columns(3)
-        with col_v1:
-            vendedor = st.text_input(
-                "Nombre del Vendedor",
-                placeholder="Escribe el nombre completo del vendedor",
-                key="txt_vendedor",
-            )
-        with col_v2:
-            codigo_vendedor = st.text_input("Código de Vendedor", max_chars=8, placeholder="Ej: VEN00001")
-        with col_v3:
-            mesa = st.text_input(
-                "Mesa",
-                placeholder="Ej: DJ1, DJ3...",
-                key="txt_mesa",
-            )
-        ruta_logica = st.text_input("Ruta Lógica", placeholder="Ej: Ruta 01 - Norte")
+        st.markdown("### 🧑‍💼 Ruta (confirmación)")
+        col_rv1, col_rv2, col_rv3 = st.columns(3)
+        with col_rv1:
+            st.text_input("Vendedor (seleccionado)", value=vendedor, disabled=True, key="vend_confirm")
+        with col_rv2:
+            st.text_input("Código Vendedor (confirmación)", value=codigo_vendedor, disabled=True, key="codvend_confirm")
+        with col_rv3:
+            st.text_input("Mesa (confirmación)", value=mesa, disabled=True, key="mesa_confirm")
+        ruta_logica_form = st.text_input("Ruta Lógica (confirmación)", value=ruta_logica, disabled=True, key="ruta_confirm")
 
         st.markdown("---")
         st.markdown("### 🍪 Presencia Biscuits")
