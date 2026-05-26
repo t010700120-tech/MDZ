@@ -1285,4 +1285,3 @@ elif st.session_state.pagina == "dashboard":
                 st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
                 if st.button("🗑️ Eliminar este período", use_container_width=True, key="btn_del_snap"):
                     del st.session_state.snapshots
-                    
